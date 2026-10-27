@@ -2,7 +2,7 @@
 ## Title: ret_Cinema
 ## Notes: Addon for your cinematic experience and memorable screenshots!
 ## Author: retRodya
-## Version: 1.0.8
+## Version: 1.0.9
 ## Category: UI
 ## IconTexture: 136034
 ## AddonCompartmentFunc: RetCinema_OpenSettings

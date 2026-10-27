@@ -1,1 +1,1 @@
-Light addon for your and cinematic expirience!
+ret_Cinema - is a light World of Wwarcraft addon for your cinematic expirience!

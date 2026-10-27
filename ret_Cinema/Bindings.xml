@@ -1,0 +1,8 @@
+<Bindings>
+    <Binding name="RETCINEMA_HIDEUI" header="RETCINEMA" category="ADDONS">
+        RetCinema_ToggleUI()
+    </Binding>
+    <Binding name="RETCINEMA_LETTERBOX" category="ADDONS">
+        RetCinema_ToggleLetterbox()
+    </Binding>
+</Bindings>

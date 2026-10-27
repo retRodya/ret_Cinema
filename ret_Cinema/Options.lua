@@ -7,6 +7,7 @@ local builders = {}
 local copyDialog
 local linkFonts = {}
 local DESCRIPTION_FONT_SCALE = 1.5
+local BINDING_BUTTON_WIDTH = 156
 
 local function LargeYellow(label, scale)
     local font, size, flags = label:GetFont()
@@ -31,6 +32,16 @@ local function Button(parent, text, width, x, y, onClick)
     button:SetText(text)
     button:SetScript("OnClick", onClick)
     return button
+end
+
+local function Tooltip(frame, text)
+    frame:EnableMouse(true)
+    frame:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(text, 1, 0.82, 0, 1, true)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
 local function Divider(parent, point, y)
@@ -200,7 +211,7 @@ local ignoredKeys = {
 }
 
 local function CreateBindingButton(parent, action, slot, x, y)
-    local button = Button(parent, "Not bound", 180, x, y, function(self, mouseButton)
+    local button = Button(parent, "Not bound", BINDING_BUTTON_WIDTH, x, y, function(self, mouseButton)
         if InCombatLockdown() then return end
         if mouseButton == "RightButton" then
             AssignKey(self, nil)
@@ -255,9 +266,19 @@ local function Checkbox(parent, text, x, y, onClick)
     local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     checkbox:SetPoint("TOPLEFT", x, y)
     checkbox:SetSize(28, 28)
-    Label(checkbox, text, "GameFontHighlight", 30, -6)
+    checkbox.label = Label(checkbox, text, "GameFontHighlight", 30, -6)
     checkbox:SetScript("OnClick", onClick)
     return checkbox
+end
+
+local function PlannedAlwaysOn(parent, y)
+    local checkbox = Checkbox(parent, "Always On", -4, y)
+    checkbox:SetChecked(false)
+    checkbox:SetEnabled(false)
+    checkbox.label:SetTextColor(0.5, 0.5, 0.5)
+    checkbox:SetMotionScriptsWhileDisabled(true)
+    Tooltip(checkbox, "Under consideration. This option is not available yet.")
+    Label(parent, "Under consideration", "GameFontNormal", 136, y - 6)
 end
 
 local function FramedBox(parent, y, height)
@@ -309,6 +330,11 @@ builders.general = function(page, content)
         end
         box:SetHeight(16 + math.max(1, math.ceil(visible / 4)) * 34)
     end
+    local feedback = Label(content, "Need bug fix or new feature? ", "GameFontNormal", 0, 0)
+    feedback:ClearAllPoints()
+    feedback:SetPoint("BOTTOMLEFT", 0, 132)
+    local ask = WordLink(content, "Ask for it!", "https://github.com/retRodya/ret_Cinema/issues/new")
+    ask:SetPoint("TOPLEFT", feedback, "TOPRIGHT", 0, 0)
     Divider(content, "BOTTOM", 100)
     Divider(content, "BOTTOM", 105)
     local made = LargeYellow(Label(content, "Made by ", "GameFontHighlight", 0, 0))
@@ -367,6 +393,7 @@ builders.letterbox = function(page, content)
     value:SetScript("OnEscapePressed", function(self) ShowHeight(); self:ClearFocus() end)
     local animation = Checkbox(content, "Enable animation", -4, -204,
         function(self) ns.SetLetterboxAnimation(self:GetChecked()) end)
+    PlannedAlwaysOn(content, -244)
     slider:SetScript("OnValueChanged", function(_, height)
         ns.SetLetterboxHeight(height)
         ShowHeight()
@@ -376,7 +403,7 @@ builders.letterbox = function(page, content)
         ShowHeight()
         animation:SetChecked(ns.db.enableAnimation)
     end
-    content:SetHeight(280)
+    content:SetHeight(320)
 end
 
 builders.camerashift = function(page, content)
@@ -416,13 +443,14 @@ builders.camerashift = function(page, content)
         self:SetText(string.format("%.1f", ns.db.cameraOffset))
         self:ClearFocus()
     end)
-    Label(content, "Warning!", "GameFontNormal", 0, -232)
+    PlannedAlwaysOn(content, -204)
+    Label(content, "Warning!", "GameFontNormal", 0, -260)
     local explanation = Label(content,
         "Camera Shift remembers your current offset. Press the key once to shift smoothly to the chosen value, and press key again or Esc to return.",
-        "GameFontHighlight", 0, -256)
-    explanation:SetPoint("TOPRIGHT", 0, -256)
+        "GameFontHighlight", 0, -284)
+    explanation:SetPoint("TOPRIGHT", 0, -284)
     explanation:SetWordWrap(true)
-    local warning = Label(content, "Camera Shift is not supported by this client.", "GameFontNormal", 0, -340)
+    local warning = Label(content, "Camera Shift is not supported by this client.", "GameFontNormal", 0, -368)
     slider:SetScript("OnValueChanged", function(_, offset)
         ns.SetCameraOffset(offset)
         value:SetText(string.format("%.1f", ns.db.cameraOffset))
@@ -434,31 +462,50 @@ builders.camerashift = function(page, content)
         slider:SetValue(ns.db.cameraOffset)
         value:SetText(string.format("%.1f", ns.db.cameraOffset))
     end
-    content:SetHeight(390)
+    content:SetHeight(420)
+end
+
+builders.smoothmotion = function(page, content)
+    ModuleDescription(content, ns.modules[4])
+    local box = FramedBox(content, -104, 186)
+    local enabled = Checkbox(box, "Permanent SmoothMotion", 8, -40)
+    enabled:SetChecked(false)
+    enabled:SetEnabled(false)
+    enabled.label:SetTextColor(0.5, 0.5, 0.5)
+    Label(box, "Smoothing amount", "GameFontDisable", 12, -86)
+    local slider = CreateFrame("Slider", "RetCinemaSmoothMotionSlider", box, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", 16, -122)
+    slider:SetSize(330, 18)
+    slider:SetMinMaxValues(0, 100)
+    slider:SetValue(50)
+    slider:SetEnabled(false)
+    _G[slider:GetName() .. "Low"]:SetText("Low")
+    _G[slider:GetName() .. "High"]:SetText("High")
+    content:SetHeight(340)
 end
 
 builders.keybindings = function(page, content)
-    ModuleDescription(content, ns.modules[4])
-    local function Headers(option)
-        local header = CreateFrame("Frame", nil, content)
+    ModuleDescription(content, ns.modules[5])
+    local function Headers(parent, option)
+        local header = CreateFrame("Frame", nil, parent)
         header:SetSize(540, 16)
         Label(header, "Module", "GameFontNormal", 0, 0)
         local key = Label(header, "Key", "GameFontNormal", 180, 0)
-        key:SetWidth(180)
+        key:SetWidth(BINDING_BUTTON_WIDTH)
         key:SetJustifyH("CENTER")
-        local choice = Label(header, option, "GameFontNormal", 414, 0)
-        choice:SetWidth(126)
+        local choice = Label(header, option, "GameFontNormal", 388, 0)
+        choice:SetWidth(116)
         choice:SetJustifyH("CENTER")
         return header
     end
-    local function BindingRow(binding)
-        local row = CreateFrame("Frame", nil, content)
+    local function BindingRow(parent, binding)
+        local row = CreateFrame("Frame", nil, parent)
         row:SetSize(540, 26)
         row.binding = binding
         row.label = Label(row, _G["BINDING_NAME_" .. binding], "GameFontHighlight", 0, -6)
         CreateBindingButton(row, binding, 1, 180, 0)
         row.orLabel = Label(row, "or", "GameFontHighlightSmall", 180, -29)
-        row.orLabel:SetWidth(180)
+        row.orLabel:SetWidth(BINDING_BUTTON_WIDTH)
         row.orLabel:SetJustifyH("CENTER")
         CreateBindingButton(row, binding, 2, 180, -48)
         return row
@@ -467,16 +514,25 @@ builders.keybindings = function(page, content)
         local second = GetBindingKey(row.binding) ~= nil
         row.orLabel:SetShown(second)
         row:SetHeight(second and 74 or 26)
-        row:SetPoint("TOPLEFT", 0, y)
+        row:SetPoint("TOPLEFT", 12, y)
+        row:SetPoint("TOPRIGHT", -12, y)
         return y - row:GetHeight()
     end
-    local combinedHeader = Headers("Exit all")
-    local moduleHeader = Headers("Combined")
-    local combinedRow = BindingRow("RETCINEMA_COMBINED")
+    local moduleHeader = Headers(content, "Combined")
+    moduleHeader:SetPoint("TOPLEFT", 12, -84)
+    Divider(content, "TOP", -108)
+    local combinedBox = FramedBox(content, 0, 0)
+    local combinedHeader = Headers(combinedBox, "Exit all")
+    combinedHeader:SetPoint("TOPLEFT", 12, -16)
+    local combinedRow = BindingRow(combinedBox, "RETCINEMA_COMBINED")
     local font, size, flags = combinedRow.label:GetFont()
     combinedRow.label:SetFont(font, size + 2, flags)
+    local labelHover = CreateFrame("Frame", nil, combinedRow)
+    labelHover:SetPoint("TOPLEFT")
+    labelHover:SetSize(170, 26)
+    Tooltip(labelHover, "One Key for all Combined modules above")
     local exitAll = CreateFrame("CheckButton", "RetCinemaExitAllCheckbox", combinedRow, "UICheckButtonTemplate")
-    exitAll:SetPoint("TOPLEFT", 463, -1)
+    exitAll:SetPoint("TOPLEFT", 432, -1)
     exitAll:SetSize(28, 28)
     exitAll:SetScript("OnClick", function(self) ns.db.combinedAsEsc = not not self:GetChecked() end)
     exitAll:SetScript("OnEnter", function(self)
@@ -486,18 +542,19 @@ builders.keybindings = function(page, content)
         GameTooltip:Show()
     end)
     exitAll:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    local subtitle = Label(content, "or use marcro commands below:", "GameFontHighlightSmall", 0, 0)
-    local commandsBox = FramedBox(content, 0, 108)
+    local subtitle = Label(combinedBox, "or use marcro commands below:", "GameFontHighlightSmall", 0, 0)
+    local commandsBox = FramedBox(combinedBox, 0, 108)
     local commands = Label(commandsBox, "", "GameFontHighlightSmall", 12, -10)
     commands:SetPoint("TOPRIGHT", -12, -10)
     commands:SetWordWrap(true)
     Button(commandsBox, "Copy macro text", 156, 10, -72,
         function() CopyText("Copy macro text", ns.GetCombinedCommands()) end)
-    local combinedDivider = Divider(content, "TOP", 0)
+    local combinedDivider = Divider(combinedBox, "TOP", 0)
     bindingStatus = LargeYellow(Label(content, "", "GameFontHighlight", 0, 0), 1.5)
     local rows = {}
     local function RefreshCombined()
         local shown = ns.HasCombinedActions()
+        combinedBox:SetShown(shown)
         combinedHeader:SetShown(shown)
         combinedRow:SetShown(shown)
         exitAll:SetChecked(ns.db.combinedAsEsc)
@@ -505,26 +562,26 @@ builders.keybindings = function(page, content)
         commandsBox:SetShown(shown)
         combinedDivider:SetShown(shown)
         commands:SetText(ns.GetCombinedCommands())
-        local y = -84
-        if shown then
-            combinedHeader:SetPoint("TOPLEFT", 0, y)
-            y = PlaceRow(combinedRow, y - 26) - 10
-            subtitle:SetPoint("TOPLEFT", 0, y)
-            y = y - 20
-            commandsBox:SetPoint("TOPLEFT", 0, y)
-            commandsBox:SetPoint("TOPRIGHT", 0, y)
-            y = y - commandsBox:GetHeight() - 14
-            combinedDivider:SetPoint("TOPLEFT", 0, y)
-            combinedDivider:SetPoint("TOPRIGHT", 0, y)
-            y = y - 20
-        end
-        moduleHeader:SetPoint("TOPLEFT", 0, y)
-        y = y - 26
+        local y = -120
         for _, row in ipairs(rows) do
             local enabled = ns.IsModuleEnabled(row.module)
             row:SetShown(enabled)
             if enabled then y = PlaceRow(row, y) - 28 end
             row.checkbox:SetChecked(ns.db.combinedActions[row.binding])
+        end
+        if shown then
+            combinedBox:SetPoint("TOPLEFT", 0, y)
+            combinedBox:SetPoint("TOPRIGHT", 0, y)
+            local insideY = PlaceRow(combinedRow, -42) - 10
+            subtitle:SetPoint("TOPLEFT", 12, insideY)
+            insideY = insideY - 20
+            commandsBox:SetPoint("TOPLEFT", 12, insideY)
+            commandsBox:SetPoint("TOPRIGHT", -12, insideY)
+            insideY = insideY - commandsBox:GetHeight() - 14
+            combinedDivider:SetPoint("TOPLEFT", 12, insideY)
+            combinedDivider:SetPoint("TOPRIGHT", -12, insideY)
+            combinedBox:SetHeight(-insideY + 14)
+            y = y - combinedBox:GetHeight() - 8
         end
         bindingStatus:ClearAllPoints()
         bindingStatus:SetPoint("TOPLEFT", 0, y - 8)
@@ -532,9 +589,9 @@ builders.keybindings = function(page, content)
         content:SetHeight(math.max(320, -y + 110))
     end
     for index, action in ipairs(ns.actions) do
-        local row = BindingRow(action.binding)
+        local row = BindingRow(content, action.binding)
         row.module = action.module
-        row.checkbox = Checkbox(row, "", 463, -1, function(self)
+        row.checkbox = Checkbox(row, "", 432, -1, function(self)
             local checked = self:GetChecked()
             StopListening()
             ns.SetCombinedAction(action.binding, checked)
@@ -591,6 +648,24 @@ local function SelectTab(index)
     if pages[index].refresh then pages[index].refresh() end
 end
 
+local function LayoutTabs()
+    local count = 1
+    for _, module in ipairs(ns.modules) do
+        if ns.IsModuleEnabled(module.id) then count = count + 1 end
+    end
+    local width = math.min(100, math.max(1, (panel:GetWidth() - 32) / count - 6))
+    local visible = 0
+    for index, tab in ipairs(tabs) do
+        if index == 1 or ns.IsModuleEnabled(ns.modules[index - 1].id) then
+            tab.layoutWidth = width
+            tab:ClearAllPoints()
+            tab:SetPoint("TOPLEFT", 16 + visible * (width + 6), -48)
+            PanelTemplates_TabResize(tab, 4, width)
+            visible = visible + 1
+        end
+    end
+end
+
 local function Build()
     if built then
         SelectTab(selectedTab)
@@ -608,27 +683,23 @@ local function Build()
         PanelTemplates_TabResize(tab, 4, 100)
         tab:HookScript("OnShow", function(self)
             self:RegisterEvent("DISPLAY_SIZE_CHANGED")
-            PanelTemplates_TabResize(self, 4, 100)
+            PanelTemplates_TabResize(self, 4, self.layoutWidth or 100)
         end)
         tab:HookScript("OnHide", function(self) self:UnregisterEvent("DISPLAY_SIZE_CHANGED") end)
         tab:HookScript("OnEvent", function(self)
-            if self:IsShown() then PanelTemplates_TabResize(self, 4, 100) end
+            if self:IsShown() then LayoutTabs() end
         end)
         tab:SetScript("OnClick", function() SelectTab(index) end)
         tabs[index] = tab
     end
+    panel:HookScript("OnSizeChanged", LayoutTabs)
     ns.RefreshModuleSettings = function()
         StopListening()
-        local visible = 0
         for index, tab in ipairs(tabs) do
             local enabled = index == 1 or ns.IsModuleEnabled(ns.modules[index - 1].id)
             tab:SetShown(enabled)
-            if enabled then
-                tab:ClearAllPoints()
-                tab:SetPoint("TOPLEFT", 16 + visible * 106, -48)
-                visible = visible + 1
-            end
         end
+        LayoutTabs()
         for index, page in pairs(pages) do
             if index > 1 and not ns.IsModuleEnabled(ns.modules[index - 1].id) then page:Hide() end
         end

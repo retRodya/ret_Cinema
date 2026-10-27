@@ -15,7 +15,8 @@ ns.modules = {
     { id = "hideui", name = "Hide UI", description = "Hide the UI and world names for clean screenshots.", hint = "Assign a key in the Keybindings tab." },
     { id = "letterbox", name = "Letterbox", description = "Frame your view with cinematic letterboxes.", hint = "Letterboxes - black bars at the top and bottom of the screen." },
     { id = "camerashift", name = "Camera Shift", description = "Set a horizontal camera offset and toggle it with a keybinding.", hint = " " },
-    { id = "keybindings", name = "Keybindings", description = "Assign keys to Modules.", hint = "Modules can be combined into one key" },
+    { id = "smoothmotion", name = "Smooth Motion", description = "Smooth Motion", hint = "Under development." },
+    { id = "keybindings", name = "Keybindings", description = "Assign keys to Modules.", hint = "Modules can be combined into one key below" },
 }
 ns.actions = {
     { module = "hideui", binding = "RETCINEMA_HIDEUI", command = "hideui", run = function() RetCinema_ToggleUI() end },

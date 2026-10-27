@@ -31,7 +31,7 @@ icon, or `/retcin` (also `/retcinema`). It also appears in the game's addon sett
 
 - **General:** Show minimap icon. The Addon Compartment entry remains available
   when this icon is hidden. Drag the icon to move it around the minimap.
-  **Enable modules** controls Hide UI, Letterbox, and Camera Shift, arranged
+  **Enable modules** controls Hide UI, Letterbox, Camera Shift, and the Smooth Motion preview, arranged
   horizontally with up to four entries per row. Disabled modules stop immediately
   and their tabs are hidden. Hover a checkbox for its tab description.
   **Keybindings** appears automatically whenever any action module is enabled;
@@ -39,6 +39,8 @@ icon, or `/retcin` (also `/retcinema`). It also appears in the game's addon sett
   disabled. All action modules start enabled; Camera Shift starts inactive until
   its key or chat command is used. Credits contain underlined
   links to ret_, Cinematic, and DynamicCam; click a link to copy its address.
+  **Ask for it!** above the credits copies the GitHub address for a bug report or
+  feature request.
 - **Hide UI:** Screenshot mode hides the UI and temporarily switches off world
   names for players, NPCs, pets, and focused units on clients that expose those
   settings. Original values return on Escape, the action's second press, module
@@ -50,6 +52,8 @@ icon, or `/retcin` (also `/retcinema`). It also appears in the game's addon sett
   Enter or leaving the field applies the value; Escape cancels the edit.
   Both bars have the same height. Changes apply immediately to visible bars.
   **Enable animation** smoothly slides the bars in and out (enabled by default).
+  **Always On** is a disabled placeholder marked **Under consideration**; it has
+  no effect and does not save a setting.
 - **Camera Shift:** Set a shoulder offset from -15 to 15 in 0.1 steps with the
   slider or the editable value to its right. Press Enter or leave the field to
   apply a typed value; Escape cancels the edit. Values outside the range are
@@ -63,12 +67,17 @@ icon, or `/retcin` (also `/retcinema`). It also appears in the game's addon sett
   Disabling the module also restores
   them. Camera Shift starts inactive after login or reload. Unsupported clients
   show a message and disable the slider.
+  **Always On** is also a disabled placeholder marked **Under consideration**.
+- **Smooth Motion:** This tab is under development. Its checkbox and smoothing
+  slider are disabled placeholders. Opening the tab builds only its settings
+  preview; it has no runtime effects or keybindings.
 - **Keybindings:** Hide UI, Show Letterbox, and Camera Shift. All are toggles. Click a key
   slot, then press a key combination. Right-click a slot to clear it; Escape
   cancels capture. Bindings can also be set under Key Bindings > AddOns >
   ret_Cinema. Assigning a used key replaces its previous action.
   Check actions in the **Combined** column to include them in **Combined key**.
-  This binding appears above the individual actions when at least one is checked.
+  This binding appears in its own container below all individual actions when at
+  least one is checked. Hover **Combined Key** for its explanation.
   Its key toggles all checked actions; the individual bindings still work.
   The static preview below it lists the selected chat commands on separate lines.
   **Copy macro text** opens a selected, read-only copy field. Ctrl+C copies its

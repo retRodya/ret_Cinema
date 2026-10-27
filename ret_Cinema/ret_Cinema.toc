@@ -1,10 +1,10 @@
 ## Interface: 120105, 120100, 16001
 ## Title: ret_Cinema
-## Notes: Screenshot mode and adjustable cinematic letterbox bars for Retail and WoW Forever.
+## Notes: Addon for your cinematic experience and memorable screenshots!
 ## Author: retRodya
-## Version: 1.0.1
+## Version: 1.0.7
 ## Category: UI
-## IconTexture: Interface\Icons\INV_Misc_Spyglass_03
+## IconTexture: 136034
 ## AddonCompartmentFunc: RetCinema_OpenSettings
 ## SavedVariables: ret_CinemaDB
 

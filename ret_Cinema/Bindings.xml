@@ -1,8 +1,14 @@
 <Bindings>
     <Binding name="RETCINEMA_HIDEUI" header="RETCINEMA" category="ADDONS">
-        RetCinema_ToggleUI()
+        RetCinema_RunBinding("RETCINEMA_HIDEUI")
     </Binding>
     <Binding name="RETCINEMA_LETTERBOX" category="ADDONS">
-        RetCinema_ToggleLetterbox()
+        RetCinema_RunBinding("RETCINEMA_LETTERBOX")
+    </Binding>
+    <Binding name="RETCINEMA_COMBINED" category="ADDONS">
+        RetCinema_ToggleCombined()
+    </Binding>
+    <Binding name="RETCINEMA_CAMERA" category="ADDONS">
+        RetCinema_RunBinding("RETCINEMA_CAMERA")
     </Binding>
 </Bindings>

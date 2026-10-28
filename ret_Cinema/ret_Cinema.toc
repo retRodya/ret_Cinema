@@ -1,12 +1,13 @@
 ## Interface: 120105, 120100, 16001
-## Title: ret_Cinema
+## Title: |cff9acd32ret_|rCinema
 ## Notes: Addon for your cinematic experience and memorable screenshots!
 ## Author: retRodya
-## Version: 1.0.9
+## Version: 1.1.2
 ## Category: UI
 ## IconTexture: 136034
 ## AddonCompartmentFunc: RetCinema_OpenSettings
 ## SavedVariables: ret_CinemaDB
 
 Core.lua
+Profiles.lua
 Options.lua

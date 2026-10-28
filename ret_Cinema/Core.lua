@@ -1,10 +1,18 @@
 local addonName, ns = ...
 
-BINDING_HEADER_RETCINEMA = "ret_Cinema"
+ns.retColor = "|cff9acd32"
+function ns.ColorRet(text)
+    -- Idempotent: rendering a title twice must not nest color escapes.
+    text = tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%xret_|r", "ret_")
+    return (text:gsub("ret_", ns.retColor .. "ret_|r"))
+end
+ns.title = ns.ColorRet("ret_Cinema")
+BINDING_HEADER_RETCINEMA = ns.title
 BINDING_NAME_RETCINEMA_HIDEUI = "HideUI"
 BINDING_NAME_RETCINEMA_LETTERBOX = "Letterbox"
 BINDING_NAME_RETCINEMA_COMBINED = "Combined Lens"
 BINDING_NAME_RETCINEMA_CAMERA = "CameraShift"
+for index = 2, 5 do _G["BINDING_NAME_RETCINEMA_COMBINED" .. index] = "Combined Lens " .. index end
 
 ns.icon = 136034
 function ns.GetDescription()
@@ -15,10 +23,11 @@ ns.effects = {
     { id = "hideui", name = "HideUI", description = "Hide the UI and world names for clean screenshots.", hint = "Assign a Lens button in the Lens tab." },
     { id = "letterbox", name = "Letterbox", description = "Frame your view with cinematic letterboxes.", hint = "Letterboxes - black bars at the top and bottom of the screen." },
     { id = "camerashift", name = "CameraShift", description = "Set a horizontal camera offset and toggle it with a Lens button.", hint = " " },
-    { id = "smoothmotion", name = "SmoothMotion", description = "SmoothMotion", hint = "Under development." },
+    { id = "fov", name = "FOV", description = "Adjust your field of view.", hint = "Under consideration. This Effect is not available yet.", underConsideration = true },
+    { id = "smoothmotion", name = "SmoothMotion", description = "SmoothMotion", hint = "Under consideration. This Effect is not available yet.", underConsideration = true },
 }
 ns.generalHint = "Turn on the Permanent Effect as well as applying this Effect to your Lens."
-ns.lens = { description = "Assign Lens buttons to Effects.", hint = "Effects can be added to one Combined Lens button." }
+ns.lens = { description = "Assign Lens buttons to Effects.", hint = "Effects can be added to Combined Lens buttons." }
 ns.actions = {
     { effect = "hideui", binding = "RETCINEMA_HIDEUI", command = "hideui", run = function() RetCinema_ToggleUI() end },
     { effect = "letterbox", binding = "RETCINEMA_LETTERBOX", command = "showletterbox", run = function() RetCinema_ToggleLetterbox() end },
@@ -36,14 +45,15 @@ local events = CreateFrame("Frame")
 local uiHidden, visibilityHooked = false, false
 local cameraShiftActive = false
 local uiRestoreShown = true
-local cameraAnimator, escapeHandler, combinedState
+local cameraAnimator, escapeHandler
+local combinedStates = {}
 local cameraLensRestore, cameraReturnValues, pendingStartup
 local operationDepth, restoringAll, exitingAll = 0, false, false
 local SyncScreen, CreateBars
 
 function ns.UpdateEscapeHandler()
     if not ns.db or operationDepth > 0 then return end
-    local active = uiHidden or letterboxShown or cameraShiftActive or combinedState ~= nil
+    local active = uiHidden or letterboxShown or cameraShiftActive or next(combinedStates) ~= nil
     if active and not escapeHandler then
         -- Independent of UIParent, so Escape also works with the whole UI hidden.
         escapeHandler = CreateFrame("Frame", "RetCinemaEscapeHandler")
@@ -67,6 +77,10 @@ function ns.IsEffectEnabled(id) return ns.db and ns.db.effects[id] == true end
 function ns.IsAppliedToLens(id) return ns.db and ns.db.lensEffects[id] == true end
 function ns.IsActionEnabled(action)
     return ns.IsEffectEnabled(action.effect) and ns.IsAppliedToLens(action.effect)
+end
+function ns.HasLensEffects()
+    for _, action in ipairs(ns.actions) do if ns.IsActionEnabled(action) then return true end end
+    return false
 end
 
 local function UpdateEvents()
@@ -100,7 +114,7 @@ local function RestoreCVars(values)
 end
 
 function ns.Print(message)
-    print("|cffffd100ret_Cinema:|r " .. message)
+    print(ns.title .. ": " .. ns.ColorRet(message))
 end
 
 local function UpdateBars()
@@ -192,56 +206,81 @@ function RetCinema_ToggleLetterbox()
     ns.UpdateEscapeHandler()
 end
 
-function ns.SetCombinedAction(binding, enabled)
+function ns.CombinedBinding(index)
+    return index == 1 and "RETCINEMA_COMBINED" or "RETCINEMA_COMBINED" .. index
+end
+function ns.GetCombinedCount() return ns.db.combinedLensCount end
+local function UpdateCombinedBindingName()
+    BINDING_NAME_RETCINEMA_COMBINED = ns.GetCombinedCount() > 1 and "Combined Lens 1" or "Combined Lens"
+end
+function ns.GetCombinedActions(index)
+    index = index or 1
+    if index == 1 then return ns.db.combinedActions end
+    local lens = ns.db.extraCombinedLenses[index]
+    return lens and lens.actions
+end
+function ns.GetCombinedExitAll(index)
+    if index == 1 then return ns.db.combinedAsEsc end
+    return ns.db.extraCombinedLenses[index].exitAll
+end
+function ns.SetCombinedExitAll(index, enabled)
+    if index == 1 then ns.db.combinedAsEsc = not not enabled
+    elseif ns.db.extraCombinedLenses[index] then ns.db.extraCombinedLenses[index].exitAll = not not enabled end
+end
+function ns.AddCombinedLens()
+    if ns.GetCombinedCount() >= 5 then return false end
+    ns.db.combinedLensCount = ns.GetCombinedCount() + 1
+    UpdateCombinedBindingName()
+    if ns.RefreshEffectSettings then ns.RefreshEffectSettings() end
+    return true
+end
+function ns.SetCombinedAction(binding, enabled, index)
+    local actions = ns.GetCombinedActions(index)
+    if not actions then return end
     for _, action in ipairs(ns.actions) do
         if action.binding == binding then
-            ns.db.combinedActions[binding] = not not enabled
+            actions[binding] = not not enabled
             return
         end
     end
 end
 
-function ns.HasCombinedActions()
+function ns.HasCombinedActions(index)
+    local actions = ns.GetCombinedActions(index)
+    if not actions then return false end
     for _, action in ipairs(ns.actions) do
-        if ns.IsActionEnabled(action) and ns.db.combinedActions[action.binding] then return true end
+        if ns.IsActionEnabled(action) and actions[action.binding] then return true end
     end
     return false
 end
 
-function ns.GetCombinedCommands()
-    local commands = {}
-    for _, action in ipairs(ns.actions) do
-        if ns.IsActionEnabled(action) and ns.db.combinedActions[action.binding] then
-            commands[#commands + 1] = "/retcin " .. action.command
-        end
-    end
-    return table.concat(commands, "\n")
-end
-
-function RetCinema_ToggleCombined()
-    if combinedState and ns.db.combinedAsEsc then ns.RestoreAll(); return end
+function RetCinema_ToggleCombined(index)
+    index = index or 1
+    if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > ns.GetCombinedCount() then return end
+    if combinedStates[index] and ns.GetCombinedExitAll(index) then ns.RestoreAll(); return end
+    if not combinedStates[index] and not ns.HasCombinedActions(index) then return end
     exitingAll = false
     local function IsActive(action)
         if action.effect == "hideui" then return uiHidden end
         if action.effect == "letterbox" then return letterboxShown end
-        return cameraShiftActive
+        return ns.IsCameraShiftActive()
     end
     operationDepth = operationDepth + 1
-    if combinedState then
-        local previous = combinedState
-        combinedState = nil
+    if combinedStates[index] then
+        local previous = combinedStates[index]
+        combinedStates[index] = nil
         for _, saved in ipairs(previous) do
             if ns.IsActionEnabled(saved.action) and IsActive(saved.action) ~= saved.active then saved.action.run() end
         end
     else
         local selected = {}
         for _, action in ipairs(ns.actions) do
-            if ns.IsActionEnabled(action) and ns.db.combinedActions[action.binding] then
+            if ns.IsActionEnabled(action) and ns.GetCombinedActions(index)[action.binding] then
                 selected[#selected + 1] = { action = action, active = IsActive(action) }
             end
         end
         if #selected > 0 then
-            combinedState = selected
+            combinedStates[index] = selected
             for _, saved in ipairs(selected) do saved.action.run() end
         end
     end
@@ -469,7 +508,7 @@ function RetCinema_ToggleCameraShift()
     if not ns.IsEffectEnabled("camerashift") or not ns.IsAppliedToLens("camerashift") then return end
     if not ns.CameraAvailable() then ns.Print("CameraShift is not supported by this client."); return end
     if not ns.db.cameraConsent then
-        ns.Print("Allow experimental camera features in Effects > CameraShift first.")
+        ns.Print("Allow experimental camera features in Effect > CameraShift first.")
         return
     end
     exitingAll = false
@@ -484,7 +523,7 @@ function ns.RestoreAll()
     if not ns.db or restoringAll or exitingAll then return end
     restoringAll, exitingAll = true, true
     operationDepth = operationDepth + 1
-    combinedState = nil
+    combinedStates = {}
     if letterboxShown then
         letterboxShown = false
         UpdateLetterboxVisibility()
@@ -496,11 +535,12 @@ function ns.RestoreAll()
     UpdateEvents()
 end
 local function ForgetCombinedEffect(id)
-    if not combinedState then return end
-    for index = #combinedState, 1, -1 do
-        if combinedState[index].action.effect == id then table.remove(combinedState, index) end
+    for lens, state in pairs(combinedStates) do
+        for index = #state, 1, -1 do
+            if state[index].action.effect == id then table.remove(state, index) end
+        end
+        if #state == 0 then combinedStates[lens] = nil end
     end
-    if #combinedState == 0 then combinedState = nil end
 end
 function ns.SetApplyToLens(id, enabled)
     if ns.db.lensEffects[id] == nil then return end
@@ -570,7 +610,7 @@ local function CreateMinimapButton()
     end)
     minimapButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:SetText("ret_Cinema")
+        GameTooltip:SetText(ns.title)
         GameTooltip:Show()
     end)
     minimapButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -618,6 +658,32 @@ local function StartPermanentEffects()
     UpdateEvents()
 end
 
+function ns.ApplyProfilePreferences(settings)
+    operationDepth = operationDepth + 1
+    combinedStates = {}
+    ns.RestoreUI()
+    ReturnOriginalCamera(true)
+    cameraLensRestore, cameraReturnValues = nil, nil
+    letterboxShown, barHeight, animationTarget = false, 0, nil
+    if bars then
+        bars:SetScript("OnUpdate", nil)
+        bars:SetScript("OnSizeChanged", nil)
+        bars:Hide()
+    end
+    for key, value in pairs(settings) do ns.db[key] = value end
+    UpdateCombinedBindingName()
+    if bars and ns.IsEffectEnabled("letterbox") then
+        bars:SetScript("OnSizeChanged", UpdateBars)
+        SyncScreen()
+    end
+    ns.SetMinimapButton(ns.db.showMinimapButton)
+    PositionMinimapButton()
+    exitingAll = false
+    operationDepth = operationDepth - 1
+    StartPermanentEffects()
+    if ns.RefreshEffectSettings then ns.RefreshEffectSettings() end
+end
+
 events:RegisterEvent("ADDON_LOADED")
 events:SetScript("OnEvent", function(self, event, name)
     if event == "ADDON_LOADED" then
@@ -649,21 +715,34 @@ events:SetScript("OnEvent", function(self, event, name)
             if type(ns.db.lensEffects[action.effect]) ~= "boolean" then ns.db.lensEffects[action.effect] = true end
         end
         ns.db.lensEffects.smoothmotion = false -- No runtime action while this effect is in development.
+        ns.db.lensEffects.fov = false
         if type(ns.db.combinedActions) ~= "table" then ns.db.combinedActions = {} end
         for _, action in ipairs(ns.actions) do
             ns.db.combinedActions[action.binding] = ns.db.combinedActions[action.binding] == true
         end
         ns.db.cameraEnabled = nil
         ns.db.combinedAsEsc = ns.db.combinedAsEsc == true
+        ns.db.combinedLensCount = math.floor(NumberInRange(ns.db.combinedLensCount, 1, 5) or 1)
+        if type(ns.db.extraCombinedLenses) ~= "table" then ns.db.extraCombinedLenses = {} end
+        for index = 2, 5 do
+            local lens = ns.db.extraCombinedLenses[index]
+            if type(lens) ~= "table" then lens = {}; ns.db.extraCombinedLenses[index] = lens end
+            lens.exitAll = lens.exitAll == true
+            if type(lens.actions) ~= "table" then lens.actions = {} end
+            for _, action in ipairs(ns.actions) do lens.actions[action.binding] = lens.actions[action.binding] == true end
+        end
+        UpdateCombinedBindingName()
         ns.db.showSecondBinding = nil
         -- Recover the original camera before reapplying any saved permanent effect.
         RestoreNames()
         ReturnOriginalCamera(true)
+        ns.Profiles.Initialize()
         CreateMinimapButton()
         ns.RegisterSettings()
         if IsLoggedIn and IsLoggedIn() then StartPermanentEffects()
         else pendingStartup = true; UpdateEvents() end
     elseif event == "PLAYER_LOGOUT" then
+        ns.Profiles.Save()
         RestoreNames()
         ReturnOriginalCamera(true)
     elseif event == "PLAYER_LOGIN" then
@@ -679,12 +758,12 @@ SlashCmdList.RETCINEMA = function(message)
     local command = (message or ""):match("^%s*(%S*)"):lower()
     if command == "" then
         RetCinema_OpenSettings()
-    elseif command == "combinedlens" or command == "combined" then
-        RetCinema_ToggleCombined()
+    elseif command == "combinedlens" or command:match("^combinedlens[1-5]$") then
+        RetCinema_ToggleCombined(tonumber(command:match("(%d)$")) or 1)
     else
         for _, action in ipairs(ns.actions) do
             if command == action.command then action.run(); return end
         end
-        ns.Print("Commands: /retcin, /retcin hideui, /retcin showletterbox, /retcin camerashift, /retcin combinedlens")
+        ns.Print("Commands: /retcin, /retcin hideui, /retcin showletterbox, /retcin camerashift, /retcin combinedlens (or combinedlens1 through combinedlens5)")
     end
 end

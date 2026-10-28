@@ -10,6 +10,7 @@ for _, method in ipairs({
     "SetJustifyH", "SetWordWrap", "SetColorTexture", "SetTexture", "SetTexCoord",
     "SetFrameStrata", "EnableMouse", "RegisterForClicks", "RegisterForDrag",
     "SetHighlightTexture", "SetNormalFontObject", "SetHighlightFontObject",
+    "SetDisabledFontObject",
     "SetMinMaxValues", "SetValueStep", "SetObeyStepOnDrag", "SetFontObject",
     "SetMultiLine", "SetAutoFocus", "SetBackdrop", "SetBackdropColor", "SetBackdropBorderColor",
     "SetOwner", "SetPropagateKeyboardInput", "LockHighlight", "UnlockHighlight", "SetMotionScriptsWhileDisabled", "SetMaxLetters",
@@ -37,6 +38,8 @@ function Frame:GetFont() return "TestFont", self.fontSize or 12, "" end
 function Frame:SetFont(_, size) self.fontSize = size end
 function Frame:SetTextColor(r, g, b) self.color = { r, g, b } end
 function Frame:SetTexture(texture) self.texture = texture end
+function Frame:SetAtlas(atlas) self.atlas = atlas end
+function Frame:Click() if self.scripts.OnClick then self.scripts.OnClick(self, "LeftButton") end end
 function Frame:GetStringWidth() return #self:GetText() * (self.fontSize or 12) / 2 end
 function Frame:GetStringHeight() return self.fontSize or 12 end
 function Frame:SetScrollChild(child) self.scrollChild = child end
@@ -93,7 +96,11 @@ end
 function GetCurrentKeyBoardFocus() return focusedFrame end
 function Frame:HighlightText() self.highlighted = true end
 function Frame:CreateTexture() return CreateFrame("Texture", nil, self) end
-function Frame:CreateFontString() return CreateFrame("FontString", nil, self) end
+function Frame:CreateFontString(_, _, template)
+    local string = CreateFrame("FontString", nil, self)
+    string.fontTemplate = template
+    return string
+end
 function CreateFrame(kind, name, parent, template)
     local frame = setmetatable({ kind = kind, name = name, parent = parent,
         template = template, scripts = {}, points = {}, events = {}, shown = true, children = {} }, Frame)
@@ -166,12 +173,25 @@ function PanelTemplates_TabResize(tab, padding, width)
 end
 function PanelTemplates_SelectTab(tab) tab.selected = true end
 function PanelTemplates_DeselectTab(tab) tab.selected = false end
+local settingsCategories, nextCategoryId = {}, 123
+local function RegisterCategory(parent, panel, name)
+    local id = nextCategoryId
+    nextCategoryId = id + 1
+    local category = { parent = parent, panel = panel, name = name, subcategories = {}, GetID = function() return id end,
+        GetSubcategories = function(self) return self.subcategories end, SetShouldSortAlphabetically = noop }
+    if parent then parent.subcategories[#parent.subcategories + 1] = category end
+    settingsCategories[id] = category
+    return category
+end
 Settings = {
-    RegisterCanvasLayoutCategory = function(panel)
-        return { GetID = function() return 123 end }
-    end,
+    RegisterCanvasLayoutCategory = function(panel, name) return RegisterCategory(nil, panel, name) end,
+    RegisterCanvasLayoutSubcategory = RegisterCategory,
     RegisterAddOnCategory = noop,
-    OpenToCategory = function(id) assert(id == 123); RetCinemaSettingsPanel:Show() end,
+    OpenToCategory = function(id)
+        assert(settingsCategories[id])
+        for _, category in pairs(settingsCategories) do category.panel:Hide() end
+        settingsCategories[id].panel:Show()
+    end,
 }
 
 local cvars = {
@@ -196,6 +216,7 @@ function GetAddOnMetadata(_, field) assert(field == "Notes"); return notes end
 C_AddOns = { GetAddOnMetadata = GetAddOnMetadata }
 local ns = {}
 assert(loadfile("ret_Cinema/Core.lua"))("ret_Cinema", ns)
+assert(loadfile("ret_Cinema/Profiles.lua"))("ret_Cinema", ns)
 assert(loadfile("ret_Cinema/Options.lua"))("ret_Cinema", ns)
 local events = frames[4]
 assert(events.events.ADDON_LOADED)
@@ -322,7 +343,7 @@ ns.SetCameraOffset(1.5)
 print("PASS: shoulder offset, rounding, motion-sickness settings, disable/re-enable, original camera restored")
 
 for _, action in ipairs(ns.actions) do ns.SetCombinedAction(action.binding, true) end
-assert(ns.GetCombinedCommands() == "/retcin hideui\n/retcin showletterbox\n/retcin camerashift")
+assert(ns.HasCombinedActions() and ns.GetCombinedActions(1).RETCINEMA_CAMERA)
 RetCinema_ToggleCombined()
 finishCamera()
 assert(not UIParent:IsShown() and bars:IsShown() and ns.IsCameraShiftActive())
@@ -330,7 +351,7 @@ RetCinema_ToggleCombined()
 finishCamera()
 assert(UIParent:IsShown() and not bars:IsShown() and not ns.IsCameraShiftActive())
 ns.SetEffectEnabled("camerashift", false)
-assert(ns.GetCombinedCommands() == "/retcin hideui\n/retcin showletterbox")
+assert(ns.HasCombinedActions() and not ns.IsActionEnabled(ns.actions[3]))
 
 
 RetCinema_ToggleCombined()
@@ -598,39 +619,47 @@ do
 end
 print("PASS: permanent baselines, Lens overrides, Apply gating, consent, scoped warning dismissal, all-Lens exit")
 
--- Settings pages are built lazily, in separate main and Effects tab groups.
+-- Separate native General / Effect / Lens categories build their content lazily.
 SlashCmdList.RETCINEMA("")
-assert(RetCinemaSettingsTab1:GetText() == "General" and RetCinemaSettingsTab2:GetText() == "Lens")
-assert(RetCinemaSettingsTab1.points.TOPLEFT[2] == RetCinemaSettingsTab2.points.TOPLEFT[2])
-assert(not RetCinemaBarHeightSlider and not RetCinemaCameraOffsetSlider and not RetCinemaSmoothMotionSlider)
-for index, name in ipairs({ "HideUI", "Letterbox", "CameraShift", "SmoothMotion" }) do
-    local tab = _G["RetCinemaSettingsTab" .. (index + 2)]
-    assert(tab:GetText() == name and tab.points.TOPLEFT[2] < RetCinemaSettingsTab2.points.TOPLEFT[2])
+assert(not RetCinemaSettingsTab1 and not RetCinemaGeneralPanel.content)
+assert(find(function(f) return f.parent == RetCinemaSettingsPanel and f.text == ns.title end).fontTemplate == "GameFontHighlightHuge")
+assert(ns.ColorRet(ns.title) == ns.title and BINDING_HEADER_RETCINEMA == ns.title)
+assert(find(function(f) return f.parent == RetCinemaSettingsPanel and f.atlas == "Options_HorizontalDivider" end))
+for index, name in ipairs({ "General", "Effect", "|cff40c7ebLens|r", "Profiles", "Support" }) do
+    assert(ns.settingsCategories.main.subcategories[index].name == name)
 end
+Settings.OpenToCategory(ns.settingsCategories.general:GetID())
 local function page(id) return find(function(f) return f.pageId == id end) end
 local function checkbox(content, text)
     return find(function(f) return f.kind == "CheckButton" and f.parent == content and f.label:GetText() == text end)
 end
-local function effectTab(index) click(_G["RetCinemaSettingsTab" .. (index + 2)]) end
+local function effectTab(index)
+    Settings.OpenToCategory(ns.settingsCategories.effect:GetID())
+    click(_G["RetCinemaSettingsTab" .. index])
+end
 local general = page("general").content
 local checks = {}
-for _, effect in ipairs(ns.effects) do
+for index, effect in ipairs(ns.effects) do
     checks[effect.id] = find(function(f) return f.kind == "CheckButton" and f.label:GetText() == effect.name end)
     checks[effect.id].scripts.OnEnter(checks[effect.id])
     assert(GameTooltip:GetText() == effect.description)
-    assert(checks[effect.id].points.TOPLEFT[2] == -8)
+    assert(checks[effect.id].points.TOPLEFT[2] == -8 - math.floor((index - 1) / 4) * 34)
 end
-assert(#ns.effects == 4 and ns.db.effects.lens == nil and ns.db.effects.keybindings == nil)
-local description = find(function(f) return f.parent == general and f.text == notes end)
+assert(#ns.effects == 5 and ns.db.effects.lens == nil and ns.db.effects.keybindings == nil)
+local description = find(function(f) return f.parent == RetCinemaGeneralPanel and f.text == notes end)
 assert(description.fontSize == 18)
 local oldNotes = notes
 notes = "A new description from TOC"
-page("general").refresh()
+RetCinemaGeneralPanel:Hide(); RetCinemaGeneralPanel:Show()
 assert(description:GetText() == notes)
 notes = oldNotes
-page("general").refresh()
+RetCinemaGeneralPanel:Hide(); RetCinemaGeneralPanel:Show()
 assert(find(function(f) return f.kind == "FontString" and f.text == ns.generalHint end))
 assert(find(function(f) return f.kind == "FontString" and f.text == "Enable Effect modules:" end))
+assert(find(function(f) return f.text == "Need a bug fix or a new feature? " end))
+assert(not RetCinemaProfilesPanel.content and not RetCinemaSupportPanel.content, "Child pages build on first use")
+assert(ns.settingsCategories.profiles.parent == ns.settingsCategories.main)
+assert(ns.settingsCategories.support.parent == ns.settingsCategories.main)
 do
     local lines = 0
     for _, f in ipairs(general.children) do
@@ -641,7 +670,11 @@ do
     local made = find(function(f) return f.text == "Made by " end)
     assert(creditIcon.width == 64 and made.points.BOTTOMLEFT[1] > creditIcon.points.BOTTOMLEFT[1])
     for _, word in ipairs({ "ret_", "Cinematic", "DynamicCam", "Ask for it!" }) do
-        click(find(function(f) return f.kind == "Button" and f.text == word end))
+        local link = find(function(f) return f.kind == "Button" and f.text == word end)
+        local color = link:GetFontString().color
+        assert(color[1] == (word == "ret_" and 154 / 255 or 1))
+        assert(color[2] == (word == "ret_" and 205 / 255 or 1))
+        click(link)
         assert(RetCinemaCopyDialog.editBox:GetText():find("https://github.com/", 1, true))
     end
     assert(RetCinemaCopyDialog.editBox:GetText() == "https://github.com/retRodya/ret_Cinema/issues/new")
@@ -671,9 +704,13 @@ local letterContent = page("letterbox").content
 assert(RetCinemaBarHeightSlider and not RetCinemaPermanentBarHeightSlider)
 local letterPermanent = checkbox(letterContent, "Permanent Letterbox")
 local letterApply = checkbox(letterContent, "Apply Effect to Lens")
+local letterAnimation = checkbox(letterContent, "Enable animation")
+assert(letterAnimation.points.TOPLEFT[2] == letterApply.points.TOPLEFT[2] and letterAnimation.points.TOPLEFT[1] > letterApply.points.TOPLEFT[1])
+assert(find(function(f) return f.text == "Lens bar height" end))
 letterPermanent:SetChecked(true)
 click(letterPermanent)
 assert(RetCinemaPermanentBarHeightSlider and ns.db.permanentLetterbox)
+assert(find(function(f) return f.text == "Permanent bar height" end))
 RetCinemaPermanentBarHeightInput:SetText("6,2%")
 RetCinemaPermanentBarHeightInput.scripts.OnEnterPressed(RetCinemaPermanentBarHeightInput)
 assert(ns.db.permanentLetterboxHeight == 6.2)
@@ -691,7 +728,7 @@ RetCinemaBarHeightInput.scripts.OnEscapePressed(RetCinemaBarHeightInput)
 assert(ns.db.letterboxHeight == 25 and RetCinemaBarHeightInput:GetText() == "25%")
 letterApply:SetChecked(false)
 click(letterApply)
-assert(not ns.IsAppliedToLens("letterbox") and not RetCinemaBarHeightSlider.parent:IsShown())
+assert(not ns.IsAppliedToLens("letterbox") and not RetCinemaBarHeightSlider.parent:IsShown() and not letterAnimation:IsShown())
 finishEffects()
 assert(top.height == 62, "Turning off Apply must leave permanent bars intact")
 letterApply:SetChecked(true)
@@ -702,21 +739,27 @@ finishEffects()
 assert(not bars:IsShown() and not RetCinemaPermanentBarHeightSlider.parent:IsShown())
 
 -- Camera controls use the same layout and require explicit experimental-feature consent.
+ns.SetCameraConsent(false)
 effectTab(3)
 local cameraContent = page("camerashift").content
 local cameraPermanent = checkbox(cameraContent, "Permanent CameraShift")
 local cameraApply = checkbox(cameraContent, "Apply Effect to Lens")
-local cameraConsent = checkbox(cameraContent, "Allow experimental camera features")
-assert(cameraConsent:GetChecked() and cameraPermanent.enabled)
-assert(RetCinemaBarHeightSlider.points.TOPLEFT[2] == RetCinemaCameraOffsetSlider.points.TOPLEFT[2])
-cameraConsent:SetChecked(false)
-click(cameraConsent)
-assert(not ns.db.cameraConsent and not cameraPermanent.enabled and not RetCinemaCameraOffsetSlider.enabled)
+local cameraConsent = checkbox(cameraContent, "Allow Blizzard experimental camera feature")
+assert(not cameraConsent:GetChecked() and not cameraPermanent:IsShown() and not cameraApply:IsShown())
+assert(cameraConsent.points.TOPLEFT[2] == -274 and not RetCinemaCameraOffsetSlider)
+local explanation = find(function(f) return f.text and f.text:find("CameraShift remembers your current shoulder", 1, true) end)
+assert(not explanation:IsShown() and explanation.fontTemplate == "GameFontNormal")
 cameraConsent:SetChecked(true)
 click(cameraConsent)
+assert(cameraPermanent:IsShown() and cameraApply:IsShown() and explanation:IsShown())
+assert(cameraConsent.points.TOPLEFT[2] == -274)
+assert(cameraPermanent.points.TOPLEFT[2] > cameraConsent.points.TOPLEFT[2])
+assert(RetCinemaBarHeightSlider.points.TOPLEFT[2] == RetCinemaCameraOffsetSlider.points.TOPLEFT[2])
+assert(find(function(f) return f.text == "Lens shoulder camera offset" end))
 cameraPermanent:SetChecked(true)
 click(cameraPermanent)
-assert(RetCinemaPermanentCameraOffsetSlider and ns.db.permanentCameraShift)
+assert(RetCinemaPermanentCameraOffsetSlider and ns.db.permanentCameraShift and cameraConsent.points.TOPLEFT[2] == -274)
+assert(find(function(f) return f.text == "Permanent shoulder camera offset" end))
 RetCinemaPermanentCameraOffsetInput:SetText("-6,7")
 RetCinemaPermanentCameraOffsetInput.scripts.OnEnterPressed(RetCinemaPermanentCameraOffsetInput)
 finishEffects()
@@ -730,19 +773,29 @@ finishEffects()
 assert(cvars.test_cameraOverShoulder == "-2")
 
 effectTab(4)
+assert(RetCinemaFOVSlider and not RetCinemaFOVSlider.enabled and not RetCinemaFOVSlider.scripts.OnValueChanged)
+assert(not checkbox(page("fov").content, "Apply FOV to Lens").enabled)
+assert(not checkbox(page("fov").content, "Permanent FOV").enabled)
+effectTab(5)
 local smoothContent = page("smoothmotion").content
 assert(RetCinemaSmoothMotionSlider and not RetCinemaSmoothMotionSlider.enabled)
 assert(not RetCinemaSmoothMotionSlider.scripts.OnValueChanged and not RetCinemaSmoothMotionSlider.scripts.OnUpdate)
 assert(not checkbox(smoothContent, "Apply Effect to Lens").enabled)
 checks.smoothmotion:SetChecked(false)
 click(checks.smoothmotion)
-assert(not RetCinemaSettingsTab6:IsShown() and RetCinemaSettingsTab1.selected)
+assert(not RetCinemaSettingsTab5:IsShown() and page("hideui"):IsShown())
 checks.smoothmotion:SetChecked(true)
 click(checks.smoothmotion)
 print("PASS: grouped Effects tabs, lazy permanent controls, editable values, TOC metadata, credits icon, planned Effects")
 
--- Lens lists Apply selections independently of the General runtime switches.
-click(RetCinemaSettingsTab2)
+-- Lens requires an enabled Effect with Apply selected.
+for index, name in ipairs({ "HideUI", "Letterbox", "CameraShift", "FOV", "SmoothMotion" }) do
+    local tab = _G["RetCinemaSettingsTab" .. index]
+    assert(tab:GetText() == name and tab:GetWidth() >= 120)
+end
+assert(RetCinemaSettingsTab5.points.TOPLEFT[2] < RetCinemaSettingsTab4.points.TOPLEFT[2])
+assert(RetCinemaSettingsTab4:GetFontString().color[2] == 0.5 and RetCinemaSettingsTab5:GetFontString().color[2] == 0.5)
+Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
 local lensPage, lensContent = page("lens"), page("lens").content
 local function binding(action, slot)
     return find(function(f) return f.action == action and f.slot == slot end)
@@ -784,8 +837,8 @@ local rule = find(function(f) return f.kind == "Texture" and f.parent == lensCon
 assert(rule.points.TOPLEFT[2] > hide1.parent.points.TOPLEFT[2])
 checks.letterbox:SetChecked(false)
 click(checks.letterbox)
-assert(letter1.parent:IsShown() and not letter1.enabled and not ns.IsEffectEnabled("letterbox"))
-assert(RetCinemaSettingsTab2:IsShown(), "Lens is always available")
+assert(not letter1.parent:IsShown() and not letter1.enabled and not ns.IsEffectEnabled("letterbox"))
+assert(ns.HasLensEffects())
 checks.letterbox:SetChecked(true)
 click(checks.letterbox)
 assert(letter1.enabled)
@@ -833,29 +886,285 @@ combat = false
 lensPage.scripts.OnEvent(lensPage, "PLAYER_REGEN_ENABLED")
 assert(camera1.enabled)
 for _, button in ipairs({ hide1, letter1, camera1 }) do
-    button.parent.checkbox:SetChecked(false)
-    click(button.parent.checkbox)
+    button.parent.checks[1]:SetChecked(false)
+    click(button.parent.checks[1])
 end
-assert(not combinedBox:IsShown() and bindings.G == "RETCINEMA_COMBINED")
+assert(combinedBox:IsShown() and bindings.G == "RETCINEMA_COMBINED")
 for _, effect in ipairs(ns.effects) do ns.SetApplyToLens(effect.id, false) end
 assert(not hide1.parent:IsShown() and not letter1.parent:IsShown() and not camera1.parent:IsShown())
-assert(find(function(f) return f.kind == "FontString" and f.parent == lensContent and f.text:find("Apply an Effect", 1, true) end):IsShown())
-click(RetCinemaSettingsTab1)
+assert(page("general"):IsShown() and not lensPage:IsShown())
+for _, child in ipairs(ns.settingsCategories.main.subcategories) do assert(child ~= ns.settingsCategories.lens) end
+-- An Apply flag on a disabled Effect must not expose Lens.
+ns.SetEffectEnabled("hideui", false)
+ns.SetApplyToLens("hideui", true)
+assert(not ns.HasLensEffects())
+for _, child in ipairs(ns.settingsCategories.main.subcategories) do assert(child ~= ns.settingsCategories.lens) end
+ns.SetEffectEnabled("hideui", true)
+assert(ns.settingsCategories.main.subcategories[3] == ns.settingsCategories.lens)
 assert(not lensPage.events.UPDATE_BINDINGS)
 print("PASS: Lens membership, disabled Effect rows, two Combined slots, gray unbound keys, dropdown, commands, conflicts, combat")
 
+-- Up to five Combined Lenses have independent selections, bindings and exit policies.
+do
+    for _, action in ipairs(ns.actions) do ns.SetApplyToLens(action.effect, true) end
+    Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
+    local add = find(function(f) return f.kind == "Button" and f.text == "Add another Combined Lens" end)
+    assert(add:IsShown() and ns.GetCombinedCount() == 1)
+    for count = 2, 5 do
+        click(add)
+        assert(ns.GetCombinedCount() == count)
+        local firstRow = binding("RETCINEMA_COMBINED", 1).parent
+        local row = binding(ns.CombinedBinding(count), 1).parent
+        assert(firstRow.label:GetText() == "Combined Lens 1" and row.label:GetText() == "Combined Lens " .. count)
+        assert(row.parent == combinedBox and binding(ns.CombinedBinding(count), 2):IsShown())
+        assert(find(function(f) return f.parent == row and f.kind == "Texture" and f.points.TOPLEFT end))
+        for _, action in ipairs(ns.actions) do
+            local check = binding(action.binding, 1).parent.checks[count]
+            assert(check and check:IsShown())
+            check.scripts.OnEnter(check)
+            assert(GameTooltip:GetText() == "Add " .. _G["BINDING_NAME_" .. action.binding] .. " to Combined Lens " .. count)
+        end
+    end
+    assert(not add:IsShown() and not ns.AddCombinedLens())
+    assert(find(function(f) return f.parent == lensContent and f.text == "Add to a specific Combined Lens" end))
+    local secondButton = binding("RETCINEMA_COMBINED2", 1)
+    click(secondButton); secondButton.scripts.OnKeyDown(secondButton, "K")
+    assert(bindings.K == "RETCINEMA_COMBINED2")
+    -- Exercise each selector through its own menu, including after a binding refresh.
+    for index = 1, 5 do
+        local row = binding(ns.CombinedBinding(index), 1).parent
+        local dropdown = row.selector
+        click(dropdown)
+        local choice = find(function(f)
+            return f.kind == "Button" and f.parent.parent == dropdown and
+                f.text == (index % 2 == 0 and "All Lenses" or "Only added Lenses")
+        end)
+        click(choice)
+        assert(ns.GetCombinedExitAll(index) == (index % 2 == 0))
+    end
+    for index = 1, 5 do
+        for _, action in ipairs(ns.actions) do ns.SetCombinedAction(action.binding, false, index) end
+    end
+    ns.SetCombinedAction("RETCINEMA_HIDEUI", true, 1)
+    ns.SetCombinedAction("RETCINEMA_LETTERBOX", true, 2)
+    ns.SetCombinedAction("RETCINEMA_CAMERA", true, 2)
+    ns.SetCombinedAction("RETCINEMA_HIDEUI", true, 3)
+    ns.SetCombinedAction("RETCINEMA_LETTERBOX", true, 3)
+    ns.SetCombinedExitAll(2, false)
+    SlashCmdList.RETCINEMA("combinedlens1")
+    SlashCmdList.RETCINEMA("combinedlens2")
+    finishEffects()
+    assert(not UIParent:IsShown() and bars:IsShown() and ns.IsCameraShiftActive())
+    SlashCmdList.RETCINEMA("combinedlens")
+    assert(UIParent:IsShown() and bars:IsShown() and ns.IsCameraShiftActive())
+    RetCinema_ToggleCombined(2); finishEffects()
+    assert(not bars:IsShown() and not ns.IsCameraShiftActive() and cvars.test_cameraOverShoulder == "-2")
+    -- Overlap captures the state at each activation, rather than sharing one snapshot.
+    RetCinema_ToggleCombined(1)
+    RetCinema_ToggleCombined(3)
+    assert(UIParent:IsShown())
+    RetCinema_ToggleCombined(3)
+    assert(not UIParent:IsShown())
+    RetCinema_ToggleCombined(1); finishEffects()
+    assert(UIParent:IsShown() and not bars:IsShown())
+    -- All Lenses clears every snapshot and smoothly exits effects outside this Combined Lens.
+    ns.SetCombinedExitAll(2, true)
+    RetCinema_ToggleCombined(1); RetCinema_ToggleCombined(2); finishEffects()
+    RetCinema_ToggleCombined(2)
+    assert(UIParent:IsShown() and not ns.IsCameraShiftActive() and RetCinemaCameraAnimator.scripts.OnUpdate)
+    finishEffects()
+    RetCinema_ToggleCombined(1)
+    assert(not UIParent:IsShown(), "All Lenses must discard other Combined snapshots")
+    RetCinema_ToggleCombined(2)
+    pressEscape(); finishEffects()
+    assert(UIParent:IsShown() and not bars:IsShown() and cvars.test_cameraOverShoulder == "-2")
+    -- Removing an Effect invalidates it in every active snapshot.
+    RetCinema_ToggleCombined(1); RetCinema_ToggleCombined(3)
+    ns.SetEffectEnabled("hideui", false)
+    RetCinema_ToggleCombined(3); finishEffects()
+    assert(UIParent:IsShown() and not bars:IsShown())
+    ns.SetEffectEnabled("hideui", true)
+    RetCinema_ToggleCombined(1)
+    assert(not UIParent:IsShown())
+    pressEscape(); finishEffects()
+    -- Version 2 round-trips all five lens configurations, independently of key assignments.
+    local originalName = ns.Profiles.Current()
+    local export = ns.Profiles.Export()
+    local ok, imported = ns.Profiles.Import(export)
+    assert(ok and ns.GetCombinedCount() == 5 and ns.GetCombinedExitAll(2))
+    assert(ns.GetCombinedActions(2).RETCINEMA_CAMERA and ns.GetCombinedActions(3).RETCINEMA_HIDEUI)
+    ns.SetCombinedAction("RETCINEMA_CAMERA", false, 2)
+    assert(ns.Profiles.Activate(originalName))
+    assert(ns.GetCombinedActions(2).RETCINEMA_CAMERA and ns.Profiles.Delete(imported))
+    assert(bindings.K == "RETCINEMA_COMBINED2")
+    SlashCmdList.RETCINEMA("combined")
+    assert(UIParent:IsShown(), "The removed alias must not activate an Effect")
+    RetCinema_ToggleCombined(0); RetCinema_ToggleCombined(6)
+    assert(UIParent:IsShown())
+end
+print("PASS: five Combined Lenses, per-Lens menus/keys, numbered commands, overlap, Escape, disable and obsolete alias")
+
+-- Profile preferences switch independently of runtime snapshots, consent and WoW bindings.
+do
+    assert(ns.Profiles.Current() == "Default" and #ns.Profiles.List() == 1)
+    ns.SetApplyToLens("hideui", true)
+    ns.SetApplyToLens("letterbox", true)
+    ns.SetApplyToLens("camerashift", true)
+    ns.SetLetterboxHeight(4, true)
+    ns.SetCameraOffset(3, true)
+    ns.SetPermanentLetterbox(true)
+    ns.SetPermanentCameraShift(true)
+    finishEffects()
+    RetCinema_ToggleUI()
+    RetCinema_ToggleCameraShift()
+    finishEffects()
+    assert(not UIParent:IsShown() and ns.IsCameraShiftActive())
+    assert(ns.Profiles.Create(" Photo "))
+    assert(ns.Profiles.Current() == "Photo" and UIParent:IsShown() and cvars.test_cameraOverShoulder == "-2")
+    assert(not ns.db.cameraRestore and not ns.db.hiddenCVars and not bars:IsShown())
+    assert(ns.db.effects.hideui and ns.db.lensEffects.hideui and ns.db.cameraConsent)
+    assert(ns.db.profiles.Default.permanentLetterbox and ns.db.profiles.Default.permanentCameraShift)
+    assert(ns.GetCombinedCount() == 1 and ns.db.profiles.Default.combinedLensCount == 5)
+    assert(ns.db.profiles.Default.extraCombinedLenses[2].exitAll and ns.db.profiles.Default.extraCombinedLenses[2].actions.RETCINEMA_CAMERA)
+    assert(not ns.db.profiles.Default.cameraRestore and not ns.db.profiles.Default.cameraConsent)
+    assert(not ns.Profiles.Create("photo") and not ns.Profiles.Create("   ") and not ns.Profiles.Create("Bad|Name"))
+    ns.SetLetterboxHeight(17.2)
+    ns.SetMinimapButton(false)
+    local exported = ns.Profiles.Export()
+    assert(exported:find("RETCINEMA_PROFILE:2|Photo|", 1, true) == 1)
+    assert(not exported:find("cameraConsent", 1, true) and not exported:find("cameraRestore", 1, true))
+    assert(ns.Profiles.CopyFrom("Default"))
+    assert(ns.Profiles.Current() == "Photo" and ns.db.permanentLetterbox and cvars.test_cameraOverShoulder == "3")
+    assert(ns.GetCombinedCount() == 5 and ns.GetCombinedExitAll(2) and ns.GetCombinedActions(3).RETCINEMA_HIDEUI)
+    ns.SetCombinedAction("RETCINEMA_CAMERA", false, 2)
+    assert(ns.db.profiles.Default.extraCombinedLenses[2].actions.RETCINEMA_CAMERA, "Combined selections must be deep-copied")
+    ns.SetEffectEnabled("hideui", false)
+    assert(ns.db.profiles.Default.effects.hideui, "Copying must not share mutable preference tables")
+    assert(ns.Profiles.Activate("Default"))
+    local legacy = exported:gsub("PROFILE:2", "PROFILE:1")
+    legacy = legacy:gsub(";effects.fov=true", ""):gsub(";combinedLensCount=1", "")
+    legacy = legacy:gsub(";extraCombinedLenses%.[^;]+", "")
+    local ok, imported = ns.Profiles.Import(legacy)
+    assert(ok and imported == "Photo (Imported)" and ns.Profiles.Current() == imported)
+    assert(ns.db.letterboxHeight == 17.2 and not ns.db.showMinimapButton)
+    assert(ns.GetCombinedCount() == 1 and not ns.GetCombinedActions(2).RETCINEMA_CAMERA and bindings.K == "RETCINEMA_COMBINED2")
+    assert(ns.db.cameraConsent and cvars.test_cameraOverShoulder == "-2" and not bars:IsShown())
+    assert(bindings.G == "RETCINEMA_COMBINED" and bindings.H == "RETCINEMA_HIDEUI")
+    assert(not ns.Profiles.Delete(imported))
+    assert(ns.Profiles.Delete("Photo") and not ns.db.profiles.Photo)
+    local count = #ns.Profiles.List()
+    for _, bad in ipairs({
+        "return _G", exported:gsub("PROFILE:2", "PROFILE:9"),
+        exported .. ";cameraConsent=true", exported .. ";letterboxHeight=5",
+        exported:gsub("letterboxHeight=17.199999999999999", "letterboxHeight=1e999"),
+        exported:gsub("showMinimapButton=false;", ""), exported .. ";;",
+        exported:gsub("combinedLensCount=1", "combinedLensCount=1.5"), string.rep("x", 16385),
+    }) do
+        assert(not ns.Profiles.Import(bad), "Malformed exports must be rejected: " .. bad:sub(1, 60))
+        assert(ns.Profiles.Current() == imported and #ns.Profiles.List() == count)
+    end
+    combat = true
+    assert(not ns.Profiles.Create("Combat") and not ns.Profiles.Activate("Default"))
+    assert(not ns.Profiles.CopyFrom("Default") and not ns.Profiles.Import(exported) and not ns.Profiles.Delete("Default"))
+    assert(type(ns.Profiles.Export()) == "string")
+    combat = false
+    assert(ns.Profiles.Current() == imported and ns.db.cameraConsent)
+end
+print("PASS: profile creation/switch/copy/import/export/delete, snapshot isolation, validation, combat and binding preservation")
+
+-- Native child categories expose working profile controls and support links.
+do
+    Settings.OpenToCategory(ns.settingsCategories.profiles:GetID())
+    local profilesPanel = RetCinemaProfilesPanel
+    local content = profilesPanel.content
+    assert(content and not RetCinemaSettingsPanel:IsShown())
+    assert(find(function(f) return f.parent == profilesPanel and f.text == "Profiles" end).fontTemplate == "GameFontHighlightHuge")
+    assert(find(function(f) return f.parent == profilesPanel and f.atlas == "Options_HorizontalDivider" end))
+    local function childButton(text)
+        return find(function(f) return f.kind == "Button" and f.parent == content and f.text == text end)
+    end
+    local function selector(role) return find(function(f) return f.profileRole == role end) end
+    local function selectProfile(dropdown, name)
+        click(dropdown)
+        local option = find(function(f)
+            return f.kind == "Button" and f.text == name and f.parent and f.parent.parent and
+                f.parent.parent.parent == dropdown.menu
+        end)
+        click(option)
+    end
+    click(childButton("Create New"))
+    RetCinemaProfileDialog.editBox:SetText("UI Profile")
+    click(RetCinemaProfileDialog.submitButton)
+    assert(ns.Profiles.Current() == "UI Profile" and not RetCinemaProfileDialog:IsShown())
+    assert(selector("active"):GetText() == "UI Profile")
+    ns.SetLetterboxHeight(13.4)
+    click(childButton("Export"))
+    local exportString = RetCinemaCopyDialog.editBox:GetText()
+    assert(exportString:find("RETCINEMA_PROFILE:2|UI Profile|", 1, true) == 1)
+    RetCinemaCopyDialog:Hide()
+    click(childButton("Import"))
+    RetCinemaProfileDialog.editBox:SetText("invalid")
+    click(RetCinemaProfileDialog.submitButton)
+    assert(RetCinemaProfileDialog:IsShown() and RetCinemaProfileDialog.error:GetText() ~= "")
+    RetCinemaProfileDialog.editBox:SetText(exportString)
+    click(RetCinemaProfileDialog.submitButton)
+    assert(ns.Profiles.Current() == "UI Profile (Imported)" and not RetCinemaProfileDialog:IsShown())
+    selectProfile(selector("copy"), "Default")
+    click(childButton("Copy"))
+    assert(ns.Profiles.Current() == "UI Profile (Imported)" and ns.db.permanentLetterbox and cvars.test_cameraOverShoulder == "3")
+    click(childButton("Create New"))
+    RetCinemaProfileDialog.editBox:SetText("Spare")
+    RetCinemaProfileDialog.editBox.scripts.OnEnterPressed(RetCinemaProfileDialog.editBox)
+    assert(ns.Profiles.Current() == "Spare" and cvars.test_cameraOverShoulder == "-2")
+    selectProfile(selector("delete"), "UI Profile (Imported)")
+    click(childButton("Delete"))
+    assert(RetCinemaProfileDialog.mode == "delete" and ns.db.profiles["UI Profile (Imported)"])
+    click(RetCinemaProfileDialog.submitButton)
+    assert(not ns.db.profiles["UI Profile (Imported)"] and ns.Profiles.Current() == "Spare")
+    selectProfile(selector("active"), "UI Profile")
+    assert(ns.Profiles.Current() == "UI Profile" and ns.db.letterboxHeight == 13.4)
+    combat = true
+    profilesPanel.scripts.OnEvent(profilesPanel, "PLAYER_REGEN_DISABLED")
+    assert(not childButton("Create New").enabled and not selector("active").enabled)
+    combat = false
+    profilesPanel.scripts.OnEvent(profilesPanel, "PLAYER_REGEN_ENABLED")
+    assert(childButton("Create New").enabled and selector("active").enabled)
+    Settings.OpenToCategory(ns.settingsCategories.support:GetID())
+    assert(not profilesPanel.events.PLAYER_REGEN_DISABLED)
+    local support = RetCinemaSupportPanel
+    assert(support.content)
+    assert(find(function(f) return f.parent == support and f.text == "Support" end).fontTemplate == "GameFontHighlightHuge")
+    local pendingLink = find(function(f) return f.parent == support.content and f.kind == "Button" and f.text == "Copy link" and not f.enabled end)
+    pendingLink.scripts.OnEnter(pendingLink)
+    assert(GameTooltip:GetText() == "Coming soon")
+    local boosty = find(function(f) return f.parent == support.content and f.kind == "Button" and f.text == "Copy link" and f.enabled ~= false end)
+    click(boosty)
+    assert(RetCinemaCopyDialog.editBox:GetText() == "https://boosty.to/ret_ro")
+    RetCinemaCopyDialog:Hide()
+    click(find(function(f) return f.parent == support.content and f.kind == "Button" and f.text == "Copy character name" end))
+    assert(RetCinemaCopyDialog.editBox:GetText() == "Хардрес-РевущийФьорд")
+    RetCinemaCopyDialog:Hide()
+    RetCinema_OpenSettings()
+    assert(RetCinemaSettingsPanel:IsShown() and not support:IsShown())
+    for _, effect in ipairs(ns.effects) do ns.SetApplyToLens(effect.id, false) end
+    ns.SetPermanentCameraShift(false)
+    ns.SetPermanentLetterbox(false)
+    finishEffects()
+end
+print("PASS: Profiles and Support child pages, profile dialogs/dropdowns, confirmed deletion and correct copy links")
 -- Disabled effects stay idle; old profiles and interrupted camera snapshots migrate safely.
 for _, effect in ipairs(ns.effects) do ns.SetEffectEnabled(effect.id, false) end
 assert(next(events.events) == nil and not bars.scripts.OnUpdate and not RetCinemaCameraAnimator.scripts.OnUpdate)
-assert(RetCinemaSettingsTab1:IsShown() and RetCinemaSettingsTab2:IsShown())
+assert(not RetCinemaSettingsTab1:IsShown() and not RetCinemaSettingsTab5:IsShown() and not ns.HasLensEffects())
 local frameCount = #frames
 RetCinema_ToggleLetterbox()
 RetCinema_RunBinding("RETCINEMA_CAMERA")
 RetCinema_ToggleCombined()
 assert(#frames == frameCount)
+local savedProfileDatabase = ret_CinemaDB
 do
     ret_CinemaDB = {
-        modules = { hideui = false, letterbox = false, camera = false, smoothmotion = false, keybindings = true },
+        modules = { hideui = false, letterbox = false, camera = false, fov = false, smoothmotion = false, keybindings = true },
         cameraRestore = { test_cameraOverShoulder = "-2", CameraKeepCharacterCentered = "1", CameraReduceUnexpectedMovement = "1" },
         hiddenCVars = { UnitNameNPC = "1", UnitNameEnemyPlayerName = "1" },
         cameraEnabled = true, showSecondBinding = true, combinedAsEsc = true,
@@ -864,6 +1173,7 @@ do
     cvars.UnitNameNPC, cvars.UnitNameEnemyPlayerName = "0", "0"
     local reloaded = {}
     assert(loadfile("ret_Cinema/Core.lua"))("ret_CinemaReload", reloaded)
+    assert(loadfile("ret_Cinema/Profiles.lua"))("ret_CinemaReload", reloaded)
     local reloadEvents = frames[#frames]
     assert(loadfile("ret_Cinema/Options.lua"))("ret_CinemaReload", reloaded)
     reloadEvents.scripts.OnEvent(reloadEvents, "ADDON_LOADED", "ret_CinemaReload")
@@ -885,6 +1195,7 @@ do
     cvars.test_cameraOverShoulder, cvars.CameraKeepCharacterCentered = "8", "0"
     local startup = {}
     assert(loadfile("ret_Cinema/Core.lua"))("ret_CinemaStartup", startup)
+    assert(loadfile("ret_Cinema/Profiles.lua"))("ret_CinemaStartup", startup)
     local startupEvents = frames[#frames]
     assert(loadfile("ret_Cinema/Options.lua"))("ret_CinemaStartup", startup)
     function IsLoggedIn() return false end
@@ -898,3 +1209,20 @@ do
     assert(startup.db.permanentCameraShift and startup.db.permanentLetterbox)
 end
 print("PASS: disabled Effects idle, old-profile migration, binding preservation, permanent login, exact logout recovery")
+
+do
+    ret_CinemaDB = savedProfileDatabase
+    local persisted = {}
+    assert(loadfile("ret_Cinema/Core.lua"))("ret_CinemaPersisted", persisted)
+    assert(loadfile("ret_Cinema/Profiles.lua"))("ret_CinemaPersisted", persisted)
+    local persistedEvents = frames[#frames]
+    assert(loadfile("ret_Cinema/Options.lua"))("ret_CinemaPersisted", persisted)
+    function IsLoggedIn() return true end
+    persistedEvents.scripts.OnEvent(persistedEvents, "ADDON_LOADED", "ret_CinemaPersisted")
+    assert(persisted.Profiles.Current() == "UI Profile" and #persisted.Profiles.List() == 4)
+    assert(persisted.db.letterboxHeight == 13.4 and persisted.db.cameraConsent)
+    assert(persisted.db.profiles.Default.permanentCameraShift and not persisted.IsEffectEnabled("hideui"))
+    assert(not persisted.db.profiles["UI Profile"].effects.hideui, "Reload saves the latest active preferences")
+    assert(bindings.G == "RETCINEMA_COMBINED" and bindings.H == "RETCINEMA_HIDEUI")
+end
+print("PASS: active profile, profile history and latest preferences survive addon reload")

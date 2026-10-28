@@ -11,4 +11,16 @@
     <Binding name="RETCINEMA_CAMERA" category="ADDONS">
         RetCinema_RunBinding("RETCINEMA_CAMERA")
     </Binding>
+    <Binding name="RETCINEMA_COMBINED2" category="ADDONS">
+        RetCinema_ToggleCombined(2)
+    </Binding>
+    <Binding name="RETCINEMA_COMBINED3" category="ADDONS">
+        RetCinema_ToggleCombined(3)
+    </Binding>
+    <Binding name="RETCINEMA_COMBINED4" category="ADDONS">
+        RetCinema_ToggleCombined(4)
+    </Binding>
+    <Binding name="RETCINEMA_COMBINED5" category="ADDONS">
+        RetCinema_ToggleCombined(5)
+    </Binding>
 </Bindings>

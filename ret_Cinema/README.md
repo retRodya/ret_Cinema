@@ -73,17 +73,19 @@ beside **Show minimap icon**, with a permanent button beside its checkbox.
 The button stays gray and disabled until checked. Its window uses **+ / −** disclosure buttons for the normal
 **Effect → HideUI / Letterbox / CameraShift / FOV** and **Lens** groups. Their
 names are yellow; these buttons do not change feature preferences. Checkboxes
-enable optional features and carry an **[additional]** prefix. **[additional]
-LiteRP** is orange and directly enables the experimental child category, with
-**Do → Walk** and **Stay → Sit / Lay / Lean / GoOffline** below it. There is no
-second Enable LiteRP checkbox. Collapsing a normal group keeps its feature settings.
+enable optional features without an extra prefix. The experimental LiteRP switch
+uses an orange **[Experimental]** marker and a pink **LiteRP** name. Its children
+have no repeated markers. **Move** and **Stay** are yellow headings with disclosure
+buttons in Advanced and no enable switches or runtime gates. Check the individual
+Walk, Sit, Lay, Lean and GoOffline actions you need. Collapsing a group preserves
+its feature settings.
 Controls are built only when their group is expanded:
 
 - **HideUI:** Don't hide interface elements and Don't hide creature names exceptions.
-- **Letterbox:** transparency, animation duration, and permission to raise each bar to 50%.
-- **CameraShift:** animation duration, Head bob and Follow the target controls.
-- **FOV:** field-of-view animation duration.
-- **Lens:** a second key slot and access to Combined Lenses 4 and 5.
+- **Letterbox:** **Custom Letterbox transparency**, **Custom Letterbox animation speed**, and permission to raise each bar to 50%.
+- **CameraShift:** **Custom CameraShift animation speed**, Head bob and Follow the target controls.
+- **FOV:** **Custom FOV animation speed**.
+- **Lens:** **Additional keybind button** and **Combined Lenses up to 5**.
 - **LiteRP:** walking, posture and cinematic logout integration.
 
 Enable the individual features you need. The master switch and all feature
@@ -95,7 +97,7 @@ the editor; previously assigned native game keys are retained.
 Clicking the Advanced button again closes its window. Esc is consumed by the
 topmost addon dialog, closing only that dialog and leaving game settings open;
 other keys continue to propagate.
-Advanced, gear, GoOffline, profile, copy-link and Wish Board windows have an 80% opaque
+Advanced, gear, GoOffline, profile, copy-link and Too-Doo windows have an 80% opaque
 background. Two more blank text lines precede the feedback link on the main page.
 
 Credits include icon 136034 and links to ret_, Cinematic, and DynamicCam.
@@ -133,6 +135,8 @@ corresponding Advanced option. Two 50% bars cover the entire screen.
 **Show animation duration** discloses the numeric animation control for each
 permanent/Lens layer and additional Combined Lens when its Advanced speed option
 is enabled. This checkbox affects visibility; hiding it preserves the saved value.
+Each Combined Lens retains its own disclosure state, so opening duration controls
+for CL2 does not check them for CL1 or CL3.
 Advanced controls provide opacity from 0–100% and transition duration from 0.1–5
 seconds, independently for permanent settings, the ordinary Lens and each
 additional Combined Lens.
@@ -202,7 +206,7 @@ sliders and editable values. FOV is also available as an individual Lens, throug
 without this API use a 60–90 fallback. The `cameraFov` CVar must exist for controls
 to be usable. Leaving the Lens returns to permanent FOV or the exact pre-effect
 value. Transitions and their return on Esc use a smooth 0.35-second animation
-by default. **FOV animation speed** in Advanced reveals **Show animation duration**
+by default. **Custom FOV animation speed** in Advanced reveals **Show animation duration**
 on the Effect page and in additional Combined Lens settings. The duration supports
 0.1–5 seconds, independently for Permanent FOV, the ordinary Lens and each
 additional Combined Lens. Disabling the Advanced speed option restores the
@@ -231,7 +235,7 @@ slot keeps its configuration and native bindings. Combined Lens effect summaries
 centered on that same column axis.
 Hover a checkbox to see
 both the Effect name and the target Combined Lens number. Click a slot, then press a key combination. Right-click clears the slot;
-Esc cancels capture. With **Second Lens button** enabled, an individual Effect offers a second slot below its first,
+Esc cancels capture. With **Additional keybind button** enabled, an individual Effect offers a second slot below its first,
 separated by **or**, once the first key is assigned. Unassigned slots show
 **Not bound** in gray. Binding status text is 1.5 times the standard font size.
 Bindings cannot be edited during combat; existing shortcuts and Effects still work.
@@ -241,7 +245,7 @@ Lens rows are hidden and built only after an eligible Effect is selected in thei
 membership column. Clearing the last member hides the row without erasing settings
 or native bindings. The add/remove controls remain available. Small **+** and
 **-** buttons sit together at its bottom. **+** adds another configuration, up to
-three in Simple mode or five with **More Combined Lenses**; **-** hides the last
+three in Simple mode or five with **Combined Lenses up to 5**; **-** hides the last
 additional lens, down to one. Both buttons remain
 visible and disable at their limits; hiding is blocked in combat. Hiding an active
 lens restores its activation snapshot and keeps its settings, selections and game
@@ -258,7 +262,8 @@ container. Fresh slots start with no Effects selected; re-shown slots retain the
 Each Effect row has a gear button to the right of its membership checkboxes,
 including when only Combined Lens 1 is used. It opens an Effect settings window with a
 centered selector listing only the checked lenses for that Effect, including CL1,
-with a current/total page counter. Letterbox, CameraShift and FOV have independent
+with a current/total page counter and previous/next arrows. The arrows wrap over
+only the selected lenses. Letterbox, CameraShift and FOV have independent
 values and enabled advanced controls. HideUI has its exposed Advanced switches.
 There is no Apply checkbox or Use Effect settings switch in these dialogs;
 membership is managed by the table. Changes apply
@@ -286,11 +291,14 @@ For each Combined Lens, **Escape Button** controls its second press:
 - Unchecked: restores only the states captured for its selected Effects at entry.
   Unselected Lens Effects keep their current state.
 
-While any LiteRP action is active (Walk, Stay or GoOffline), Combined Lenses
-work as ordinary toggles even when Escape Button is checked. Each button restores
-its own activation snapshot on the next press instead of exiting all Lenses. The
-saved Escape Button preference is temporarily locked in Lens and resumes when the
-action ends. The actual Escape key still restores temporary effects.
+While an RP action owns an Effect, that Effect ignores individual Lens buttons,
+Combined Lens buttons and the physical Escape key. Unrelated Effects can still
+toggle. Escape Button temporarily uses ordinary restoration for those unrelated
+Effects, preserving its saved preference. End Walk through Run/Walk, end a Stay
+action through movement/standing, and end GoOffline by canceling native logout.
+Administrative changes (disabling an Effect, disabling LiteRP or switching profile)
+can still restore the scene. Escape clears unrelated temporary Effects while an RP
+action remains active.
 
 Permanent Effects remain the baseline in either case. Esc ends all temporary Lens
 Effects and returns to permanent/original settings. Esc retains its normal game
@@ -319,13 +327,13 @@ alias and unused macro-text generation helper remain removed.
 
 ## LiteRP
 
-Check **[additional] LiteRP** in Advanced Cinematographer to reveal its child page
-and initialize its integration. **Do** gates Walk; **Stay** gates Sit, Lay, Lean
-and GoOffline. Switching off a parent stops its active actions and preserves its
-children's saved selections. Old profiles infer these parent settings from their
-existing actions during migration.
+The child category and its title are pink. **RP Actions:** is a yellow heading at
+1.5 times the normal font size. A bordered container splits the page vertically:
+**Move / Walk** on the left and **Stay / Sit / Lay / Lean / GoOffline** on the right.
+Move and Stay are headings, with no checkboxes or runtime gates. Older gate
+preferences are validated for version-9 imports and discarded.
 
-**Do → Walk** keeps its selected Lens active while walk mode is enabled, including
+**Move → Walk** keeps its selected Lens active while walk mode is enabled, including
 when the character stops moving. Native Run/Walk changes update the known mode;
 the existing game binding is never replaced. On initial synchronization, movement
 speed is sampled after native actions in short bounded checks. While stationary,
@@ -336,19 +344,25 @@ synchronizes the addon and does not change game movement. Once the mode is known
 no speed polling or movement ticker is needed, and speed buffs do not change it.
 
 **Stay** provides separate **Sit**, **Lay** and **Lean** checkboxes, each revealing
-its own Lens selector beneath the checkbox, matching Walk. A separator divides
-Do and Stay. Native sit actions and `/sit`, `/lay`, `/sleep`, `/lean`
+its own Lens selector beneath the checkbox, matching Walk. Native sit actions and `/sit`, `/lay`, `/sleep`, `/lean`
 emotes are recognized while stationary on the ground. Moving or `/stand` ends the
 pose. Switching poses replaces the previous pose's Lens. If walk mode is still
 active, ending a pose returns to the walking Lens; otherwise it returns to the
 scene captured before LiteRP. Special native animation restrictions still need
 client testing because this is action-based detection, not a direct posture query.
 
-**GoOffline** has an enable checkbox and an adjacent button that remains disabled
-until enabled. Clicking the button opens a separate settings window with editable
+**GoOffline** has an enable checkbox, a label and a settings gear. When unchecked,
+its label is gray and its gear is hidden. When checked, the label is white, the
+gear is visible and a Lens/Combined Lens selector appears beneath it. **No Lens**
+is the migration/default choice. The gear opens a separate settings window with editable
 starting/minimum and maximum bar heights, plus the duration and growth rate of
 three stages. The window is created on first use; clicking again or pressing Esc
-closes it. Every field has a default tooltip
+closes it. Selecting a Lens applies it during the countdown. GoOffline's own
+Letterbox stages override the selected Lens's Letterbox animation and prevent
+its keybindings from changing the action. Canceling logout restores the previous
+scene or resumes the underlying Walk/Stay action. While GoOffline hides UI, it
+uses alpha instead of hiding UIParent, preserving native logout-popup behavior
+and restoring the exact original alpha afterward. Every field has a default tooltip
 and undo button. Defaults add 2 percentage points per second for 10 seconds, then
 3 for 6 seconds, then 4 for 3 seconds, capped at 50% per bar. Existing bars can
 provide a higher starting value. The native countdown is always 20 seconds; a
@@ -362,8 +376,8 @@ the game menu alone does not start the preset, and immediate logout has no count
 
 LiteRP is the child category; Walk, Stay and GoOffline are its actions.
 While any action owns the scene, Combined Lenses temporarily use ordinary toggle
-behavior, preserving their saved Escape Button preferences. Ending the action
-restores that preference. Physical Esc can still end temporary effects. Hidden, disabled or empty targets do not activate
+behavior for unrelated Effects, preserving their saved Escape Button preferences.
+RP-owned Effects remain protected until their action ends. Hidden, disabled or empty targets do not activate
 effects. LiteRP unregisters events and removes its countdown callback when unused.
 Its runtime is initialized on first enabling the Advanced feature, and each native
 hook is installed only when its corresponding integration is needed. Preferences
@@ -386,9 +400,9 @@ Effects are then applied. Recovery snapshots and experimental-camera consent are
 account-wide and excluded from copies and exports. WoW key assignments remain in
 the game's current binding set and are not changed by profile operations.
 
-Exports use `RETCINEMA_PROFILE:9|...`, including Advanced options, individual Stay
+Exports use `RETCINEMA_PROFILE:10|...`, including Advanced options, individual Stay
 targets, GoOffline stages, FOV, camera options and independent Combined Lens values.
-Versions 1–8 remain supported; version 1 imports with one
+Versions 1–9 remain supported; version 1 imports with one
 Combined Lens. Existing inherited values are copied into each additional lens
 once during migration, while old custom values are preserved. The inheritance
 flags are then removed from active settings and new exports.
@@ -407,8 +421,11 @@ gray text. **boosty.to / Copy link** provides
 **Хардрес-РевущийФьорд**, displayed in the Paladin class color; its copy button
 preserves the exact in-game identifier.
 
-A narrower **Wish Board** button sits directly below Version. It opens a local feature browser with statuses such
-as Available, Experimental and Under consideration. Click a feature to read its description.
+A narrower **Too-Doo** button sits directly below Version. It opens a local feature browser with statuses such
+as Available, Experimental, Planned and Under consideration. Planned items include
+**Improve descriptions and tooltips** and **Add a 'Like ret_' profile**. This is a
+roadmap entry; the profile is not created automatically. Click a feature to read
+its description. A blank gap separates Too-Doo from Support Development.
 It is built only on first use, sends no votes or messages, and runs no background work.
 
 ## Performance and recovery

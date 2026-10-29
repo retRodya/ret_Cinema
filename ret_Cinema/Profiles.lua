@@ -15,10 +15,11 @@ local fields = {
     { "triggerEnabled", false, nil, nil, 5 }, { "triggerTarget", 0, 0, 8, 5, true },
     { "lensValuesVersion", 1, 1, 1, 5, true },
     { "fov", ns.FOVDefault(), 1, 179, 6 }, { "permanentFov", ns.FOVDefault(), 1, 179, 6 }, { "permanentFOV", false, nil, nil, 6 },
-    { "roleplayDo", false, nil, nil, 9 }, { "roleplayStay", false, nil, nil, 9 },
+    { "roleplayDo", false, nil, nil, 9, nil, 9 }, { "roleplayStay", false, nil, nil, 9, nil, 9 },
     { "roleplaySit", false, nil, nil, 6 }, { "roleplayLay", false, nil, nil, 6 },
     { "roleplayLean", false, nil, nil, 6 }, { "roleplayLogout", false, nil, nil, 6 },
 }
+fields[#fields + 1] = { "roleplayLogoutTarget", -1, -1, 8, 10, true }
 for _, kind in ipairs({ "Sit", "Lay", "Lean" }) do fields[#fields + 1] = { "roleplay" .. kind .. "Target", 0, 0, 8, 7, true } end
 for _, spec in ipairs(ns.roleplayNumbers) do fields[#fields + 1] = { spec.key, spec.default, spec.low, spec.high, 7 } end
 for _, option in ipairs(ns.advancedOptions) do
@@ -82,11 +83,9 @@ local function Snapshot(source)
     local result = {}
     source = source or {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 9) then
+        if InVersion(field, 10) then
             local value = Read(source, field[1])
-            if value == nil and field[1] == "roleplayDo" then value = source.triggerEnabled == true end
-            if value == nil and field[1] == "roleplayStay" then value = source.roleplaySit == true or source.roleplayLay == true or source.roleplayLean == true or source.roleplayLogout == true end
-            if value == nil and field[1]:match("^roleplay%a+Target$") and field[1] ~= "triggerTarget" then value = source.triggerTarget end
+            if value == nil and field[1]:match("^roleplay%a+Target$") and field[1] ~= "roleplayLogoutTarget" then value = source.triggerTarget end
             if source.lensValuesVersion ~= 1 then
                 local prefix, key = field[1]:match("^(extraCombinedLenses%.[2-5])%.([%w]+)$")
                 if prefix and (key == "letterboxHeight" or key == "cameraOffset") then
@@ -194,23 +193,23 @@ function Profiles.Export()
     Profiles.Save()
     local values = {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 9) then
+        if InVersion(field, 10) then
             local value = Read(ns.db.profiles[ns.db.activeProfile], field[1])
             if type(value) == "boolean" then value = value and "true" or "false"
             else value = string.format("%.17g", value) end
             values[#values + 1] = field[1] .. "=" .. value
         end
     end
-    return "RETCINEMA_PROFILE:9|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
+    return "RETCINEMA_PROFILE:10|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
 end
 function Profiles.Import(text)
     local ok, errorText = CanChange()
     if not ok then return false, errorText end
     if type(text) ~= "string" or #text > 32768 then return false, "Invalid profile export." end
     text = text:match("^%s*(.-)%s*$")
-    local version, encodedName, payload = text:match("^RETCINEMA_PROFILE:([123456789])|([^|]+)|([^|]+)$")
-    if not version then return false, "Unsupported or invalid profile export." end
+    local version, encodedName, payload = text:match("^RETCINEMA_PROFILE:(%d+)|([^|]+)|([^|]+)$")
     version = tonumber(version)
+    if not version or version < 1 or version > 10 then return false, "Unsupported or invalid profile export." end
     local name = Name(Decode(encodedName))
     if not name then return false, "Invalid profile name in export." end
     local settings, seen, count = {}, {}, 0

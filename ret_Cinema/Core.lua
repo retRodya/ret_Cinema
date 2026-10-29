@@ -44,15 +44,15 @@ ns.actions = {
 ns.advancedOptions = {
     { id = "hideInterface", group = "HideUI", name = "Don't hide interface elements" },
     { id = "hideNames", group = "HideUI", name = "Don't hide creature names" },
-    { id = "letterboxOpacity", group = "Letterbox", name = "Letterbox transparency" },
-    { id = "letterboxSpeed", group = "Letterbox", name = "Letterbox animation speed" },
+    { id = "letterboxOpacity", group = "Letterbox", name = "Custom Letterbox transparency" },
+    { id = "letterboxSpeed", group = "Letterbox", name = "Custom Letterbox animation speed" },
     { id = "letterboxFull", group = "Letterbox", name = "Allow bar height up to 50%" },
-    { id = "cameraSpeed", group = "CameraShift", name = "CameraShift animation speed" },
+    { id = "cameraSpeed", group = "CameraShift", name = "Custom CameraShift animation speed" },
     { id = "cameraHeadMovement", group = "CameraShift", name = "Head bob" },
     { id = "cameraTargetFocus", group = "CameraShift", name = "Follow the target" },
-    { id = "fovSpeed", group = "FOV", name = "FOV animation speed", version = 8 },
-    { id = "secondButton", group = "Lens", name = "Second Lens button" },
-    { id = "moreCombined", group = "Lens", name = "More Combined Lenses" },
+    { id = "fovSpeed", group = "FOV", name = "Custom FOV animation speed", version = 8 },
+    { id = "secondButton", group = "Lens", name = "Additional keybind button" },
+    { id = "moreCombined", group = "Lens", name = "Combined Lenses up to 5" },
     { id = "roleplay", group = "LiteRP", name = "LiteRP", experimental = true },
 }
 function ns.Advanced(id)
@@ -132,7 +132,7 @@ local animationTarget
 local events = CreateFrame("Frame")
 local uiHidden, visibilityHooked = false, false
 local cameraShiftActive = false
-local uiRestoreShown = true
+local uiRestoreShown, uiRestoreAlpha = true, nil
 local interfaceSuppressed = false
 local cameraAnimator, fovAnimator, escapeHandler
 local combinedStates = {}
@@ -141,6 +141,9 @@ local cameraLastDuration, cameraReturnDuration
 local operationDepth, restoringAll, exitingAll = 0, false, false
 local SyncScreen, CreateBars, UpdateBars
 local SetActionState
+local function RoleplayOwns(effect)
+    return ns.IsRoleplayEffectOwned and ns.IsRoleplayEffectOwned(effect)
+end
 
 function ns.UpdateEscapeHandler()
     if not ns.db or operationDepth > 0 then return end
@@ -156,7 +159,7 @@ function ns.UpdateEscapeHandler()
         escapeHandler:SetPropagateKeyboardInput(true)
         escapeHandler:EnableKeyboard(true)
         escapeHandler:SetScript("OnKeyDown", function(_, key)
-            if key == "ESCAPE" then ns.RestoreAll() end
+            if key == "ESCAPE" then ns.RestoreAll(true) end
         end)
     end
     if escapeHandler then
@@ -311,6 +314,7 @@ function ns.SetPermanentLetterbox(enabled)
 end
 
 function RetCinema_ToggleLetterbox(value)
+    if operationDepth == 0 and RoleplayOwns("letterbox") then return end
     if not ns.IsEffectEnabled("letterbox") or not ns.IsAppliedToLens("letterbox") then return end
     if operationDepth == 0 and ns.CancelRoleplay and not ns.IsRoleplayActive() then ns.CancelRoleplay() end
     exitingAll = false
@@ -407,7 +411,7 @@ local function RestoreCombined(index)
     combinedStates[index] = nil
     if not previous then return end
     for _, saved in ipairs(previous) do
-        if ns.IsActionEnabled(saved.action) then SetActionState(saved.action, saved.active, saved.value, saved.options) end
+        if ns.IsActionEnabled(saved.action) and not RoleplayOwns(saved.action.effect) then SetActionState(saved.action, saved.active, saved.value, saved.options) end
     end
 end
 function ns.RemoveCombinedLens()
@@ -429,8 +433,8 @@ function RetCinema_ToggleCombined(index)
     index = index or 1
     if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > ns.GetCombinedCount() then return end
     local exitAll = ns.GetCombinedExitAll(index)
-    -- LiteRP owns the baseline until its action ends. Keep this button usable
-    -- as an ordinary toggle without changing its saved Escape Button preference.
+    -- RP-owned Effects cannot be changed by Lens shortcuts. Unrelated Effects
+    -- can still toggle, while the saved Escape Button preference is retained.
     if ns.IsRoleplayActive and ns.IsRoleplayActive() then exitAll = false end
     if combinedStates[index] and exitAll then
         -- A different button can remove the last unrelated effect. Compare the
@@ -462,7 +466,7 @@ function RetCinema_ToggleCombined(index)
     else
         local selected = {}
         for _, action in ipairs(ns.actions) do
-            if ns.IsActionEnabled(action) and ns.GetCombinedActions(index)[action.binding] then
+            if ns.IsActionEnabled(action) and ns.GetCombinedActions(index)[action.binding] and not RoleplayOwns(action.effect) then
                 local value
                 if action.effect == "letterbox" then value = letterboxLensHeight
                 elseif action.effect == "camerashift" then value = cameraLensOffset
@@ -515,12 +519,16 @@ function ns.RestoreUI()
     interfaceSuppressed = false
     RestoreNames()
     if restoreVisibility then
-        if SetUIVisibility then SetUIVisibility(shown) else UIParent:SetShown(shown) end
+        if uiRestoreAlpha ~= nil then
+            UIParent:SetAlpha(uiRestoreAlpha); uiRestoreAlpha = nil
+            if not shown then if SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end end
+        elseif SetUIVisibility then SetUIVisibility(shown) else UIParent:SetShown(shown) end
     end
     operationDepth = operationDepth - 1
     UpdateEvents()
 end
 function RetCinema_ToggleUI()
+    if operationDepth == 0 and RoleplayOwns("hideui") then return end
     if not ns.IsEffectEnabled("hideui") or not ns.IsAppliedToLens("hideui") then return end
     if operationDepth == 0 and ns.CancelRoleplay and not ns.IsRoleplayActive() then ns.CancelRoleplay() end
     exitingAll = false
@@ -534,7 +542,8 @@ function RetCinema_ToggleUI()
         UIParent:HookScript("OnShow", function()
             if uiHidden and interfaceSuppressed and operationDepth == 0 then
                 -- Combat and camera controls must not cancel screenshot mode.
-                if SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end
+                if uiRestoreAlpha ~= nil then UIParent:SetAlpha(0)
+                elseif SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end
             end
         end)
         visibilityHooked = true
@@ -553,7 +562,12 @@ function RetCinema_ToggleUI()
     operationDepth = operationDepth + 1
     UpdateEvents()
     if interfaceSuppressed then
-        if SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end
+        if ns.IsRoleplayLogoutActive and ns.IsRoleplayLogoutActive() then
+            -- Hiding UIParent fires native popup OnHide callbacks, which cancel
+            -- logout. Fade the interface instead while this countdown owns it.
+            uiRestoreAlpha = UIParent:GetAlpha()
+            UIParent:SetAlpha(0)
+        elseif SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end
     end
     operationDepth = operationDepth - 1
     UpdateEvents()
@@ -739,6 +753,7 @@ function ns.SetCameraConsent(enabled)
     else ReturnOriginalCamera(true) end
 end
 function RetCinema_ToggleCameraShift(value)
+    if operationDepth == 0 and RoleplayOwns("camerashift") then return end
     if not ns.IsEffectEnabled("camerashift") or not ns.IsAppliedToLens("camerashift") then return end
     if not ns.CameraAvailable() then ns.Print("CameraShift is not supported by this client."); return end
     if not ns.db.cameraConsent then
@@ -830,6 +845,7 @@ function ns.SetFOV(value, permanent)
 end
 function ns.SetPermanentFOV(enabled) ns.db.permanentFOV = not not enabled; ns.UpdateFOV() end
 function RetCinema_ToggleFOV(value)
+    if operationDepth == 0 and RoleplayOwns("fov") then return end
     if not ns.IsEffectEnabled("fov") or not ns.IsAppliedToLens("fov") or not ns.FOVAvailable() then return end
     if operationDepth == 0 and ns.CancelRoleplay and not ns.IsRoleplayActive() then ns.CancelRoleplay() end
     exitingAll = false
@@ -924,7 +940,18 @@ function ns.SetAdvanced(id, enabled)
     if ns.RefreshEffectSettings then ns.RefreshEffectSettings() end
     return true
 end
-function ns.RestoreAll()
+function ns.RestoreAll(preserveRoleplay)
+    if preserveRoleplay and ns.IsRoleplayActive() then
+        if restoringAll then return end
+        restoringAll = true
+        operationDepth = operationDepth + 1
+        combinedStates = {}
+        for _, action in ipairs(ns.actions) do if not RoleplayOwns(action.effect) then SetActionState(action, false) end end
+        operationDepth = operationDepth - 1
+        restoringAll = false
+        UpdateEvents()
+        return
+    end
     if not ns.db or restoringAll or exitingAll then return end
     restoringAll, exitingAll = true, true
     operationDepth = operationDepth + 1
@@ -1090,6 +1117,7 @@ function ns.ApplyProfilePreferences(settings)
         bars:SetScript("OnSizeChanged", nil)
         bars:Hide()
     end
+    ns.db.roleplayDo, ns.db.roleplayStay = nil, nil
     for key, value in pairs(settings) do ns.db[key] = value end
     if not ns.db.cameraConsent then ns.db.effects.camerashift = false end
     UpdateCombinedBindingName()
@@ -1130,8 +1158,9 @@ events:SetScript("OnEvent", function(self, event, name)
         ns.db.fov = NumberInRange(ns.db.fov, fovLow, fovHigh) or ns.FOVDefault()
         ns.db.permanentFov = NumberInRange(ns.db.permanentFov, fovLow, fovHigh) or ns.FOVDefault()
         ns.db.permanentFOV = ns.db.permanentFOV == true
-        if ns.db.roleplayDo == nil then ns.db.roleplayDo = ns.db.triggerEnabled == true end
-        if ns.db.roleplayStay == nil then ns.db.roleplayStay = ns.db.roleplaySit == true or ns.db.roleplayLay == true or ns.db.roleplayLean == true or ns.db.roleplayLogout == true end
+        ns.db.roleplayDo, ns.db.roleplayStay = nil, nil
+        ns.db.roleplayLogoutTarget = tonumber(ns.db.roleplayLogoutTarget) or -1
+        if ns.db.roleplayLogoutTarget % 1 ~= 0 or ns.db.roleplayLogoutTarget < -1 or ns.db.roleplayLogoutTarget > 8 then ns.db.roleplayLogoutTarget = -1 end
         ns.db.triggerEnabled = ns.db.triggerEnabled == true
         ns.db.triggerTarget = NumberInRange(ns.db.triggerTarget, 0, 8) or 0
         if ns.db.triggerTarget % 1 ~= 0 then ns.db.triggerTarget = 0 end

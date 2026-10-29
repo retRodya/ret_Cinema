@@ -21,15 +21,27 @@ local function LoadRuntime()
     local function Enabled() return ns.Advanced("roleplay") end
     function ns.TriggerAvailable() return type(ToggleRun) == "function" and type(hooksecurefunc) == "function" end
     function ns.PostureAvailable() return type(DoEmote) == "function" or (C_ChatInfo and type(C_ChatInfo.PerformEmote) == "function") end
-    function ns.IsRoleplayActive() return snapshot ~= nil or logoutElapsed ~= nil end
-    function ns.GetWalkingMode() return walkingMode end
     local function Action(target) return ns.actions[target == 8 and 4 or target + 1] end
+    function ns.IsRoleplayActive() return snapshot ~= nil or logoutElapsed ~= nil end
+    function ns.IsRoleplayLogoutActive() return logoutElapsed ~= nil end
+    function ns.IsRoleplayEffectOwned(effect)
+        if logoutElapsed ~= nil and effect == "letterbox" then return true end
+        if not snapshot or activeTarget == nil then return false end
+        if activeTarget <= 2 or activeTarget == 8 then return Action(activeTarget).effect == effect end
+        for _, action in ipairs(ns.actions) do
+            if action.effect == effect then return ns.IsActionEnabled(action) and ns.GetCombinedActions(activeTarget - 2)[action.binding] == true end
+        end
+        return false
+    end
+    function ns.GetWalkingMode() return walkingMode end
     function ns.GetTriggerTargetName(target)
+        if target == -1 then return "No Lens" end
         if target <= 2 or target == 8 then return _G["BINDING_NAME_" .. Action(target).binding] end
         return "Combined Lens " .. (target - 2)
     end
     function ns.IsTriggerTargetAvailable(target)
         target = target or ns.db.triggerTarget
+        if target == -1 then return false end
         if target <= 2 or target == 8 then return ns.IsActionEnabled(Action(target)) end
         return target - 2 <= ns.GetCombinedCount() and ns.HasCombinedActions(target - 2)
     end
@@ -46,9 +58,10 @@ local function LoadRuntime()
     local function Reconcile()
         local source, target
         if Enabled() then
-            if ns.db.roleplayStay and pose and ns.db["roleplay" .. pose] then
+            if logoutElapsed ~= nil and ns.IsTriggerTargetAvailable(ns.db.roleplayLogoutTarget) then source, target = "GoOffline", ns.db.roleplayLogoutTarget
+            elseif pose and ns.db["roleplay" .. pose] then
                 source, target = pose, ns.db["roleplay" .. pose .. "Target"]
-            elseif ns.db.roleplayDo and ns.db.triggerEnabled and walkingMode and not walkSuppressed then source, target = "Walk", ns.db.triggerTarget end
+            elseif ns.db.triggerEnabled and walkingMode and not walkSuppressed then source, target = "Walk", ns.db.triggerTarget end
         end
         if not target or not ns.IsTriggerTargetAvailable(target) then EndScene(); return end
         if source == activeSource and target == activeTarget then return end
@@ -68,7 +81,7 @@ local function LoadRuntime()
         return not (UnitIsDeadOrGhost and UnitIsDeadOrGhost("player"))
     end
     local function SyncFromMovement()
-        if walkingMode ~= nil or not Enabled() or not ns.db.roleplayDo or not ns.db.triggerEnabled then return end
+        if walkingMode ~= nil or not Enabled() or not ns.db.triggerEnabled then return end
         local speed, run = Speed()
         if not speed or speed <= 0 or not run or run <= 2.58 then return end
         if (IsFlying and IsFlying()) or (IsSwimming and IsSwimming()) or (IsFalling and IsFalling()) then return end
@@ -78,7 +91,7 @@ local function LoadRuntime()
         Reconcile()
     end
     local function SyncSoon()
-        if walkingMode ~= nil or not ns.db.roleplayDo or not ns.db.triggerEnabled or not ns.IsTriggerTargetAvailable() then return end
+        if walkingMode ~= nil or not ns.db.triggerEnabled or not ns.IsTriggerTargetAvailable() then return end
         generation = generation + 1
         local token = generation
         if C_Timer and C_Timer.After then
@@ -97,19 +110,22 @@ local function LoadRuntime()
         token = tostring(token or ""):upper()
         if token == "STAND" then pose = nil; Reconcile(); return end
         local kind = token == "SIT" and "Sit" or (token == "LAYDOWN" or token == "SLEEP") and "Lay" or token == "LEAN" and "Lean"
-        if not ns.db.roleplayStay or not kind or not ns.db["roleplay" .. kind] or Speed() ~= 0 or not OnGround() then return end
+        if not kind or not ns.db["roleplay" .. kind] or Speed() ~= 0 or not OnGround() then return end
         pose = kind
         Reconcile()
     end
     local function StopLogout()
+        local active = logoutElapsed ~= nil
         logoutElapsed = nil
         if frame then frame:SetScript("OnUpdate", nil) end
+        if active then Reconcile() end
         if ns.logoutBarHeight then ns.SetLogoutBarHeight(nil, true) end
         Notify()
     end
     local function StartLogout()
-        if not Enabled() or not ns.db.roleplayStay or not ns.db.roleplayLogout or not ns.IsEffectEnabled("letterbox") then return end
+        if not Enabled() or not ns.db.roleplayLogout or not ns.IsEffectEnabled("letterbox") then return end
         logoutElapsed = 0
+        Reconcile()
         logoutStartHeight = math.min(ns.db.roleplayLogoutMax, math.max(ns.GetLetterboxCurrentHeight(), ns.db.roleplayLogoutStart))
         ns.SetLogoutBarHeight(logoutStartHeight)
         frame:SetScript("OnUpdate", function(self, elapsed)
@@ -140,12 +156,12 @@ local function LoadRuntime()
     end
     function ns.UpdateTrigger()
         if not Enabled() then ns.StopRoleplay(); return end
-        local walk = ns.db.roleplayDo and ns.db.triggerEnabled and ns.IsTriggerTargetAvailable()
+        local walk = ns.db.triggerEnabled and ns.IsTriggerTargetAvailable()
         local stay = false
         for _, kind in ipairs({ "Sit", "Lay", "Lean" }) do
-            if ns.db.roleplayStay and ns.db["roleplay" .. kind] and ns.IsTriggerTargetAvailable(ns.db["roleplay" .. kind .. "Target"]) then stay = true end
+            if ns.db["roleplay" .. kind] and ns.IsTriggerTargetAvailable(ns.db["roleplay" .. kind .. "Target"]) then stay = true end
         end
-        local logout = ns.db.roleplayStay and ns.db.roleplayLogout and ns.IsEffectEnabled("letterbox")
+        local logout = ns.db.roleplayLogout and ns.IsEffectEnabled("letterbox")
         if not walk and not stay and not logout then ns.StopRoleplay(); return end
         if not frame then
             frame = CreateFrame("Frame", "RetCinemaRoleplayEvents")
@@ -170,7 +186,7 @@ local function LoadRuntime()
         end
         if walk and not walkHooked and ns.TriggerAvailable() then
             hooksecurefunc("ToggleRun", function()
-                if not Enabled() or not ns.db.roleplayDo or not ns.db.triggerEnabled then walkingMode = nil; return end
+                if not Enabled() or not ns.db.triggerEnabled then walkingMode = nil; return end
                 walkSuppressed = false
                 if walkingMode ~= nil then walkingMode = not walkingMode; Reconcile() else SyncSoon() end
             end)
@@ -182,7 +198,7 @@ local function LoadRuntime()
         end
         if ns.db.roleplaySit and stay and not sitHooked and type(SitStandOrDescendStart) == "function" and hooksecurefunc then
             hooksecurefunc("SitStandOrDescendStart", function()
-                if not Enabled() or not ns.db.roleplayStay or not ns.db.roleplaySit then return end
+                if not Enabled() or not ns.db.roleplaySit then return end
                 if pose == "Sit" then pose = nil; Reconcile() else Emote("SIT") end
             end)
             sitHooked = true
@@ -194,23 +210,20 @@ local function LoadRuntime()
     function ns.SetTrigger(enabled, target)
         target = target == nil and ns.db.triggerTarget or tonumber(target)
         if not ValidTarget(target) or (enabled and (not Enabled() or not ns.TriggerAvailable())) then return false end
-        if enabled then ns.db.roleplayDo = true end
         ns.db.triggerTarget, ns.db.triggerEnabled, walkSuppressed = target, enabled == true, false
         ns.UpdateTrigger(); Notify()
         return true
     end
     function ns.SetRoleplayTarget(kind, value)
-        if kind ~= "Sit" and kind ~= "Lay" and kind ~= "Lean" then return false end
-        if not ValidTarget(value) then return false end
+        if kind ~= "Sit" and kind ~= "Lay" and kind ~= "Lean" and kind ~= "Logout" then return false end
+        if not (kind == "Logout" and value == -1) and not ValidTarget(value) then return false end
         ns.db["roleplay" .. kind .. "Target"] = value
         ns.UpdateTrigger(); Notify()
         return true
     end
     function ns.SetRoleplayOption(key, value)
-        if key ~= "roleplayDo" and key ~= "roleplayStay" and key ~= "roleplaySit" and key ~= "roleplayLay" and key ~= "roleplayLean" and key ~= "roleplayLogout" then return false end
+        if key ~= "roleplaySit" and key ~= "roleplayLay" and key ~= "roleplayLean" and key ~= "roleplayLogout" then return false end
         ns.db[key] = value == true
-        if value and key ~= "roleplayDo" and key ~= "roleplayStay" then ns.db.roleplayStay = true end
-        if key == "roleplayStay" and not value then pose = nil end
         if pose and not ns.db["roleplay" .. pose] then pose = nil end
         ns.UpdateTrigger(); Notify()
         return true
@@ -230,6 +243,8 @@ local function LoadRuntime()
 end
 -- Keep the runtime, hooks and frames uninitialized until LiteRP is enabled.
 function ns.IsRoleplayActive() return false end
+function ns.IsRoleplayLogoutActive() return false end
+function ns.IsRoleplayEffectOwned() return false end
 function ns.CancelRoleplay() end
 function ns.StopRoleplay() end
 function ns.UpdateTrigger()

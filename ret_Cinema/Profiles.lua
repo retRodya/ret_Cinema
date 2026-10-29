@@ -7,29 +7,45 @@ ns.Profiles = Profiles
 -- Schema entries: path, default, minimum, maximum, first version, integer-only, last version.
 local fields = {
     { "showMinimapButton", true }, { "minimapAngle", 220, -360, 360 },
-    { "letterboxHeight", 10, 0, 25 }, { "permanentLetterboxHeight", 10, 0, 25 },
+    { "letterboxHeight", 10, 0, 50 }, { "permanentLetterboxHeight", 10, 0, 50 },
     { "enableAnimation", true, nil, nil, 1, nil, 2 }, { "permanentLetterbox", false },
     { "cameraOffset", 1.5, -15, 15 }, { "permanentCameraOffset", 1.5, -15, 15 },
     { "permanentCameraShift", false }, { "combinedAsEsc", false },
     { "advancedCinematographer", false, nil, nil, 3 },
-    { "triggerEnabled", false, nil, nil, 5 }, { "triggerTarget", 0, 0, 7, 5, true },
+    { "triggerEnabled", false, nil, nil, 5 }, { "triggerTarget", 0, 0, 8, 5, true },
     { "lensValuesVersion", 1, 1, 1, 5, true },
+    { "fov", ns.FOVDefault(), 1, 179, 6 }, { "permanentFov", ns.FOVDefault(), 1, 179, 6 }, { "permanentFOV", false, nil, nil, 6 },
+    { "roleplayDo", false, nil, nil, 9 }, { "roleplayStay", false, nil, nil, 9 },
+    { "roleplaySit", false, nil, nil, 6 }, { "roleplayLay", false, nil, nil, 6 },
+    { "roleplayLean", false, nil, nil, 6 }, { "roleplayLogout", false, nil, nil, 6 },
 }
+for _, kind in ipairs({ "Sit", "Lay", "Lean" }) do fields[#fields + 1] = { "roleplay" .. kind .. "Target", 0, 0, 8, 7, true } end
+for _, spec in ipairs(ns.roleplayNumbers) do fields[#fields + 1] = { spec.key, spec.default, spec.low, spec.high, 7 } end
+for _, option in ipairs(ns.advancedOptions) do
+    fields[#fields + 1] = { "advanced." .. option.id, false, nil, nil,
+        option.version or (option.id == "cameraHeadMovement" or option.id == "cameraTargetFocus") and 7 or 6 }
+end
+for _, spec in ipairs(ns.settingSpecs) do
+    fields[#fields + 1] = { spec.key, spec.default, spec.low, spec.high, spec.version or 6 }
+    if spec.effect ~= "hideui" then fields[#fields + 1] = { "permanent" .. spec.key:sub(1, 1):upper() .. spec.key:sub(2), spec.default, spec.low, spec.high, spec.version or 6 } end
+end
 for _, effect in ipairs(ns.effects) do fields[#fields + 1] = { "effects." .. effect.id, true, nil, nil, effect.id == "fov" and 2 or 1 } end
 for _, action in ipairs(ns.actions) do
-    fields[#fields + 1] = { "lensEffects." .. action.effect, true }
-    fields[#fields + 1] = { "combinedActions." .. action.binding, false }
+    fields[#fields + 1] = { "lensEffects." .. action.effect, action.effect ~= "fov", nil, nil, action.effect == "fov" and 6 or 1 }
+    fields[#fields + 1] = { "combinedActions." .. action.binding, false, nil, nil, action.effect == "fov" and 6 or 1 }
 end
 fields[#fields + 1] = { "combinedLensCount", 1, 1, 5, 2, true }
 for index = 2, 5 do
     local prefix = "extraCombinedLenses." .. index
     fields[#fields + 1] = { prefix .. ".exitAll", false, nil, nil, 2 }
     fields[#fields + 1] = { prefix .. ".customLetterbox", false, nil, nil, 4, nil, 4 }
-    fields[#fields + 1] = { prefix .. ".letterboxHeight", 10, 0, 25, 4 }
+    fields[#fields + 1] = { prefix .. ".letterboxHeight", 10, 0, 50, 4 }
     fields[#fields + 1] = { prefix .. ".customCameraShift", false, nil, nil, 4, nil, 4 }
     fields[#fields + 1] = { prefix .. ".cameraOffset", 1.5, -15, 15, 4 }
+    fields[#fields + 1] = { prefix .. ".fov", ns.FOVDefault(), 1, 179, 6 }
+    for _, spec in ipairs(ns.settingSpecs) do fields[#fields + 1] = { prefix .. "." .. spec.key, spec.default, spec.low, spec.high, spec.version or 6 } end
     for _, action in ipairs(ns.actions) do
-        fields[#fields + 1] = { prefix .. ".actions." .. action.binding, false, nil, nil, 2 }
+        fields[#fields + 1] = { prefix .. ".actions." .. action.binding, false, nil, nil, action.effect == "fov" and 6 or 2 }
     end
 end
 local byKey = {}
@@ -56,17 +72,21 @@ local function Write(settings, path, value)
     end
     settings[keys[#keys]] = value
 end
-local function Valid(field, value)
+local function Valid(field, value, version)
     if type(field[2]) == "boolean" then return type(value) == "boolean" end
+    if version and version < 6 and field[1] == "triggerTarget" and type(value) == "number" and value > 7 then return false end
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge and
-        value >= field[3] and value <= field[4] and (not field[6] or value % 1 == 0)
+        value >= field[3] and value <= (version and version < 6 and field[1]:match("[Ll]etterboxHeight$") and 25 or field[4]) and (not field[6] or value % 1 == 0)
 end
 local function Snapshot(source)
     local result = {}
     source = source or {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 5) then
+        if InVersion(field, 9) then
             local value = Read(source, field[1])
+            if value == nil and field[1] == "roleplayDo" then value = source.triggerEnabled == true end
+            if value == nil and field[1] == "roleplayStay" then value = source.roleplaySit == true or source.roleplayLay == true or source.roleplayLean == true or source.roleplayLogout == true end
+            if value == nil and field[1]:match("^roleplay%a+Target$") and field[1] ~= "triggerTarget" then value = source.triggerTarget end
             if source.lensValuesVersion ~= 1 then
                 local prefix, key = field[1]:match("^(extraCombinedLenses%.[2-5])%.([%w]+)$")
                 if prefix and (key == "letterboxHeight" or key == "cameraOffset") then
@@ -75,11 +95,14 @@ local function Snapshot(source)
                 end
             end
             if not Valid(field, value) then value = field[2] end
+            if field[1] == "fov" or field[1] == "permanentFov" or field[1]:match("^extraCombinedLenses%.[2-5]%.fov$") then
+                local low, high = ns.FOVRange()
+                value = math.max(low, math.min(high, value))
+            end
             Write(result, field[1], value)
         end
     end
     result.lensEffects.smoothmotion = false
-    result.lensEffects.fov = false
     return result
 end
 local function Name(value)
@@ -171,21 +194,21 @@ function Profiles.Export()
     Profiles.Save()
     local values = {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 5) then
+        if InVersion(field, 9) then
             local value = Read(ns.db.profiles[ns.db.activeProfile], field[1])
             if type(value) == "boolean" then value = value and "true" or "false"
             else value = string.format("%.17g", value) end
             values[#values + 1] = field[1] .. "=" .. value
         end
     end
-    return "RETCINEMA_PROFILE:5|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
+    return "RETCINEMA_PROFILE:9|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
 end
 function Profiles.Import(text)
     local ok, errorText = CanChange()
     if not ok then return false, errorText end
-    if type(text) ~= "string" or #text > 16384 then return false, "Invalid profile export." end
+    if type(text) ~= "string" or #text > 32768 then return false, "Invalid profile export." end
     text = text:match("^%s*(.-)%s*$")
-    local version, encodedName, payload = text:match("^RETCINEMA_PROFILE:([12345])|([^|]+)|([^|]+)$")
+    local version, encodedName, payload = text:match("^RETCINEMA_PROFILE:([123456789])|([^|]+)|([^|]+)$")
     if not version then return false, "Unsupported or invalid profile export." end
     version = tonumber(version)
     local name = Name(Decode(encodedName))
@@ -200,7 +223,7 @@ function Profiles.Import(text)
             if raw == "true" then value = true elseif raw == "false" then value = false
             else return false, "Invalid profile setting." end
         else value = tonumber(raw) end
-        if not Valid(field, value) then return false, "Invalid profile setting." end
+        if not Valid(field, value, version) then return false, "Invalid profile setting." end
         Write(settings, key, value)
         seen[key], count = true, count + 1
     end

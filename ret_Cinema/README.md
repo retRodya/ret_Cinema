@@ -29,25 +29,28 @@ letterbox effects.
 Open ret_Cinema from the Addon Compartment, the minimap icon, or `/retcin`
 (`/retcinema` is also supported). The main **ret_Cinema** page contains the
 description, minimap switch, Effect switches, Advanced Cinematographer and credits.
-Its child categories are **Effect**, **Lens**, **Trigger**, **Profiles**, and **Support**.
+Its child categories are **Effect**, **Lens**, **Profiles**, and **Support**.
+**LiteRP** appears after enabling it in Advanced Cinematographer.
 There is no separate General category.
 
-Lens appears only while at least one enabled Effect also has **Apply Effect to Lens**
+Lens appears only while at least one enabled Effect also has **Apply … to Lens**
 checked. Disabling an Effect retains its saved Apply preference but removes its
 Lens row; if no eligible Effects remain, the Lens category disappears.
 
 **Effect** shows one centered selector for the current Effect. Its dropdown lists
 enabled **HideUI**, **Letterbox**, **CameraShift**, **FOV**, and **SmoothMotion**.
-The selected Effect uses the standard yellow text; there are no side arrows or
-extra divider beneath the selector. Effect controls are created only
+The selected Effect uses the standard yellow text, with previous/next arrows
+beside its selector. Disabled Effects are skipped and navigation wraps around.
+There is no extra divider beneath the selector. Effect controls are created only
 when their enabled page is opened.
+The current page number and total number of enabled Effects appear beside the selector.
 Descriptions and hints have a blank-line gap before the controls.
 
 Page titles use the standard `GameFontHighlightHuge` and
 `Options_HorizontalDivider` styling. The visible **ret_** prefix is lime green
 (`#9ACD32`) in addon titles, credits and text. **Cinema** in the addon title,
-other hyperlinks and Lens navigation are blue. **FOV** and **SmoothMotion** names
-are gray in both the main-page switches and the Effect selector. Other options
+other hyperlinks and Lens navigation are blue. Functional **FOV** uses the normal
+active text colors; **SmoothMotion** remains gray. Other options
 under consideration and **Experimental** labels are orange. Identifiers, paths and copied URLs are unchanged.
 
 ### Main ret_Cinema page
@@ -58,19 +61,42 @@ The description reads `## Notes:` directly from `ret_Cinema.toc`.
 tab. Disabling an Effect immediately stops its work and restores its temporary
 changes. Existing Lens assignments are retained. Enable switches use four cells
 per row. A Lens row requires both the main-page enable switch and the Effect's own
-**Apply Effect to Lens** switch.
+**Apply … to Lens** switch.
 
 The main-page hint is: "Turn on the Permanent Effect as well as applying this
 Effect to your Lens." Permanent and Lens settings are independent.
 
-**Advanced Cinematographer** appears beside **Show minimap icon**. Checking it
-turns its label into a button opening five gray, disabled options. Its tooltip
-reads "Experimental. Allow access to additional options.", with Experimental in
-orange. The planned options are:
-**Letterbox Transparency**, **Letterbox Animation speed**, **CameraShift Animation
-speed**, **Second Lens button**, and **More Combined Lens**. Each disabled checkbox
-has an orange **Under consideration** tooltip. The Advanced switch is saved with
-the profile; these placeholders do not alter existing Effect or Lens behavior.
+The addon starts in Simple mode: opaque bars up to 25%, standard animation
+durations, one key slot and capacity for up to three Combined Lenses (starting with one).
+**Advanced Cinematographer** appears
+beside **Show minimap icon**, with a permanent button beside its checkbox.
+The button stays gray and disabled until checked. Its window uses **+ / −** disclosure buttons for the normal
+**Effect → HideUI / Letterbox / CameraShift / FOV** and **Lens** groups. Their
+names are yellow; these buttons do not change feature preferences. Checkboxes
+enable optional features and carry an **[additional]** prefix. **[additional]
+LiteRP** is orange and directly enables the experimental child category, with
+**Do → Walk** and **Stay → Sit / Lay / Lean / GoOffline** below it. There is no
+second Enable LiteRP checkbox. Collapsing a normal group keeps its feature settings.
+Controls are built only when their group is expanded:
+
+- **HideUI:** Don't hide interface elements and Don't hide creature names exceptions.
+- **Letterbox:** transparency, animation duration, and permission to raise each bar to 50%.
+- **CameraShift:** animation duration, Head bob and Follow the target controls.
+- **FOV:** field-of-view animation duration.
+- **Lens:** a second key slot and access to Combined Lenses 4 and 5.
+- **LiteRP:** walking, posture and cinematic logout integration.
+
+Enable the individual features you need. The master switch and all feature
+preferences are stored per profile. Switching back to Simple mode exits temporary
+Lenses, caps visible bars at 25%, and hides advanced controls. Stored values,
+additional Lens configurations and game keybindings are retained. Hidden Combined
+Lens shortcuts are inactive until revealed again. The second-key option controls
+the editor; previously assigned native game keys are retained.
+Clicking the Advanced button again closes its window. Esc is consumed by the
+topmost addon dialog, closing only that dialog and leaving game settings open;
+other keys continue to propagate.
+Advanced, gear, GoOffline, profile, copy-link and Wish Board windows have an 80% opaque
+background. Two more blank text lines precede the feedback link on the main page.
 
 Credits include icon 136034 and links to ret_, Cinematic, and DynamicCam.
 **Need a bug fix or a new feature? Ask for it!** above the credits provides the GitHub issue address for a bug
@@ -86,16 +112,32 @@ and combat do not cancel the Effect.
 
 **Permanent Hide UI** is a disabled placeholder. Its tooltip reads:
 "Not sure yet you really need this :)".
-**Apply Effect to Lens** makes HideUI available in Lens and through `/retcin hideui`.
+**Apply … to Lens** makes HideUI available in Lens and through `/retcin hideui`.
+HideUI hides both the interface and creature names by default. Advanced options
+are exceptions: **Don't hide interface elements** and **Don't hide creature names**.
+Enabling one enables that exception for the ordinary Lens; Effect controls and
+per-Combined Lens settings use the same inverted, Don't hide wording. The saved
+hide booleans retain their original meaning for profile compatibility. Simple
+mode hides both. Each additional Combined Lens can store its own switches;
+the HideUI gear is disabled until at least one of these Advanced options is enabled.
 
 ### Letterbox
 
 **Permanent Letterbox** enables persistent black bars with their own **Permanent bar height**
-slider and editable percentage. **Apply Effect to Lens** reveals a separate
+slider and editable percentage. **Apply … to Lens** reveals a separate
 **Lens bar height** control. Letterbox animations are always enabled; the old
 **Enable animation** switch and preference are removed. Each control occupies
 less than half the available row width, leaving room for another beside it.
-Each bar supports 0–25% of screen height in 0.1% steps.
+Each bar supports 0–25% of screen height in 0.1% steps, or up to 50% with the
+corresponding Advanced option. Two 50% bars cover the entire screen.
+**Show animation duration** discloses the numeric animation control for each
+permanent/Lens layer and additional Combined Lens when its Advanced speed option
+is enabled. This checkbox affects visibility; hiding it preserves the saved value.
+Advanced controls provide opacity from 0–100% and transition duration from 0.1–5
+seconds, independently for permanent settings, the ordinary Lens and each
+additional Combined Lens.
+Disabling Permanent Letterbox uses the default return duration (0.3 seconds),
+regardless of the saved duration for its now-inactive permanent settings.
 
 The permanent height may be greater or smaller than the Lens height. Activating
 Lens smoothly moves the bars to its height; a second press or Esc restores the
@@ -105,17 +147,28 @@ Saved permanent bars reappear at login or reload; the Lens Effect starts inactiv
 
 ### CameraShift
 
+Follow the target enables native enemy and interaction focus and temporarily
+removes the combat-only target-follow restriction (`CameraFollowTargetCombat`)
+on clients exposing it. The previous value is restored when focus is no longer
+used, on Lens exit and on Effect disable. Friendly-target tracking needs an
+in-game check on each client; this does not replace the game camera with a
+scripted tracking loop. Unsupported CVars are left untouched.
+
 Enabling **CameraShift** in **Enable Effect:** on the main page also grants consent
 to its experimental camera changes. The checkbox tooltip explains this choice.
 Without prior consent, CameraShift starts disabled until the checkbox is enabled.
-The Effect page contains **Permanent CameraShift** and **Apply Effect to Lens**
+The Effect page contains **Permanent CameraShift** and **Apply … to Lens**
 with their compact, editable **Permanent shoulder camera offset** and
 **Lens shoulder camera offset** sliders, from -15 to 15 in 0.1 steps. There is no
 separate permission checkbox or camera-settings explanation block on this page.
 
-CameraShift changes only shoulder offset and the two motion-sickness settings
-needed for it. It does not run `ActionCam full` or enable unrelated ActionCam
-features. Camera changes can cause visual discomfort. After explicit consent,
+CameraShift changes shoulder offset, the two motion-sickness settings needed for
+it, and the selected **Head bob** and **Follow the target** options. Enable their
+individual features in Advanced Cinematographer to expose these checkboxes. They
+are available for permanent settings, the ordinary Lens and additional Combined
+Lenses. All original values, including target focus and head movement, are restored
+when the effect ends. Unsupported options are disabled on clients lacking their CVars.
+It does not run `ActionCam full`. Camera changes can cause visual discomfort. After explicit consent,
 ret_Cinema dismisses `EXPERIMENTAL_CVAR_WARNING` only immediately following its own
 camera CVar writes. It leaves unrelated warnings alone. Blizzard's warning has no
 acceptance operation beyond dismissing the dialog; its Disable button resets
@@ -124,7 +177,8 @@ Warning timing and appearance still require an in-game check on Retail and Forev
 
 Activating a Lens remembers the live camera settings and smoothly applies its
 chosen offset. A second press or Esc returns to Permanent CameraShift when enabled,
-otherwise to the saved settings. Both directions use a 0.35-second transition.
+otherwise to the saved settings. The default transition lasts 0.35 seconds;
+Advanced controls allow 0.1–5 seconds, including the animated return on Esc.
 Changes to permanent settings while a Lens is active take effect when that Lens
 exits. Disabling the Effect, withdrawing consent, or logging out restores the
 original camera immediately. Login/reload first recovers an interrupted original
@@ -132,52 +186,86 @@ snapshot, then reapplies the saved permanent preference. Zooming and combat do n
 cancel Lens Effects.
 
 For both numeric controls, Enter or leaving the field commits an edit, and Esc
-cancels it. Decimal commas and dots are accepted. Out-of-range values are clamped;
+cancels it. Option tooltips end with a separate **Default:** line (Checked or Unchecked).
+Precise inputs also show this line after their hint, such as **Default: 0.3**.
+An undo-arrow button beside every precise numeric input restores its default.
+Decimal commas and dots are accepted. Out-of-range values are clamped;
 invalid values leave the current setting unchanged. Unsupported clients disable
 camera controls and show a message.
 
-### FOV and SmoothMotion
+### FOV
 
-Both Effects are under consideration and have gray names in the switches and selector. Their Permanent and
-Apply controls and sliders are inactive placeholders. FOV shows **Permanent FOV**,
-**Apply FOV to Lens**, and a field-of-view slider; SmoothMotion shows a smoothing
-slider. Neither creates a runtime Effect, Lens row, shortcut or camera CVar change.
+**Permanent FOV** and **Apply … to Lens** provide independent field-of-view
+sliders and editable values. FOV is also available as an individual Lens, through
+`/retcin fov`, and in every Combined Lens. The allowed range comes from
+`GetCameraFOVDefaults()`, the same API used by Blizzard's graphics settings; clients
+without this API use a 60–90 fallback. The `cameraFov` CVar must exist for controls
+to be usable. Leaving the Lens returns to permanent FOV or the exact pre-effect
+value. Transitions and their return on Esc use a smooth 0.35-second animation
+by default. **FOV animation speed** in Advanced reveals **Show animation duration**
+on the Effect page and in additional Combined Lens settings. The duration supports
+0.1–5 seconds, independently for Permanent FOV, the ordinary Lens and each
+additional Combined Lens. Disabling the Advanced speed option restores the
+0.35-second default while preserving custom preferences. Transitions start from
+the live FOV so reversing a transition never jumps. There is no
+animation callback after it finishes. Disabling FOV, changing profile and logging
+out immediately restore the original CVar and stop the animator.
+
+### SmoothMotion
+
+SmoothMotion remains a placeholder with inactive Permanent/Apply controls and
+smoothing slider. It has no runtime action and retains gray styling.
 
 ### Lens
 
 The table has **Effect**, **Lens button**, and **Add to Combined Lens** columns.
 With two or more Combined Lenses, the last column becomes **Add to a specific
 Combined Lens**, with numbered checkboxes arranged horizontally for each Effect.
-A fixed extra gap before checkbox 2 separates the first lens from additional ones
-and aligns that column across all Effect rows. Hover a checkbox to see
+With one visible Lens, checkbox 1 stands alone with its gear to the right.
+When an additional Lens exists, checkboxes **1–5** share one centered framed
+container with equal spacing; there is no extra gap between 1 and 2. The gear
+sits to the right of the complete container. Empty persisted CL2–5 slots do not
+expose a container or membership numbers. **+** temporarily reveals the next slot
+so Effects can be assigned; leaving Lens discards an unassigned reveal. Hiding a
+slot keeps its configuration and native bindings. Combined Lens effect summaries are
+centered on that same column axis.
+Hover a checkbox to see
 both the Effect name and the target Combined Lens number. Click a slot, then press a key combination. Right-click clears the slot;
-Esc cancels capture. An individual Effect offers a second slot below its first,
+Esc cancels capture. With **Second Lens button** enabled, an individual Effect offers a second slot below its first,
 separated by **or**, once the first key is assigned. Unassigned slots show
 **Not bound** in gray. Binding status text is 1.5 times the standard font size.
 Bindings cannot be edited during combat; existing shortcuts and Effects still work.
 
-The Combined Lens container remains below the individual Effects. Small **+** and
+The Combined Lens container remains below the individual Effects. Empty Combined
+Lens rows are hidden and built only after an eligible Effect is selected in their
+membership column. Clearing the last member hides the row without erasing settings
+or native bindings. The add/remove controls remain available. Small **+** and
 **-** buttons sit together at its bottom. **+** adds another configuration, up to
-five; **-** hides the last additional lens, down to one. Both buttons remain
+three in Simple mode or five with **More Combined Lenses**; **-** hides the last
+additional lens, down to one. Both buttons remain
 visible and disable at their limits; hiding is blocked in combat. Hiding an active
 lens restores its activation snapshot and keeps its settings, selections and game
 keybindings. **+** reveals the same slot with those preferences and shortcuts.
 A shortcut for a hidden slot performs no Lens action until the slot is shown again.
 
 The first lens is named **Combined Lens** until a second is added, then becomes
-**Combined Lens 1**. Each lens always offers two binding slots and its own
+**Combined Lens 1**. Each lens offers a second binding slot when that Advanced feature is enabled and its own
 **Escape Button** checkbox beneath its two key slots. To the right of the first
 slot, a comma-separated list shows the enabled Effects selected for that lens.
 Dividers separate the configurations inside the same
 container. Fresh slots start with no Effects selected; re-shown slots retain theirs.
 
-When two or more Combined Lenses exist, each Effect row has a gear button to the
-right of its membership checkboxes. It opens an Effect settings window with a
-centered **Combined Lens 2–5** selector. Letterbox and CameraShift each show only
-the independent height or shoulder-offset slider; there is no Apply checkbox or
-Use Effect settings switch in those dialogs. Membership is managed by the table.
-HideUI retains its membership checkbox and has no numeric settings. Changes apply
-on the next activation; the first Combined Lens uses the main Effect settings.
+Each Effect row has a gear button to the right of its membership checkboxes,
+including when only Combined Lens 1 is used. It opens an Effect settings window with a
+centered selector listing only the checked lenses for that Effect, including CL1,
+with a current/total page counter. Letterbox, CameraShift and FOV have independent
+values and enabled advanced controls. HideUI has its exposed Advanced switches.
+There is no Apply checkbox or Use Effect settings switch in these dialogs;
+membership is managed by the table. Changes apply
+on the next activation. Editing Combined Lens 1 edits the main Effect settings
+that this Lens already uses; CL2–5 keep independent values.
+The gear is disabled when no additional lens is selected. Clicking the same gear
+again, or pressing Esc, closes the window.
 
 Custom numeric settings are saved with the profile and do not change other
 lenses or permanent settings. Activating a custom Effect replaces its current
@@ -190,12 +278,19 @@ they do not execute a stored macro.
 
 For each Combined Lens, **Escape Button** controls its second press:
 
-- Checked: the first press applies its Effects. A second consecutive press exits
-  all temporary Lens Effects with their return animations. Activating any other
-  individual or Combined Lens resets the sequence, so the next press applies its
-  Effects again. Permanent settings remain the baseline.
+- Checked: the first press applies its Effects. On a later press, if only that
+  Lens's Effects and values remain, it exits all temporary Effects immediately
+  with their return animations. If other Effects or values remain, that press
+  replaces them with this Lens; the next press exits. The decision uses the
+  current scene, even if another Lens button was pressed in between.
 - Unchecked: restores only the states captured for its selected Effects at entry.
   Unselected Lens Effects keep their current state.
+
+While any LiteRP action is active (Walk, Stay or GoOffline), Combined Lenses
+work as ordinary toggles even when Escape Button is checked. Each button restores
+its own activation snapshot on the next press instead of exiting all Lenses. The
+saved Escape Button preference is temporarily locked in Lens and resumes when the
+action ends. The actual Escape key still restores temporary effects.
 
 Permanent Effects remain the baseline in either case. Esc ends all temporary Lens
 Effects and returns to permanent/original settings. Esc retains its normal game
@@ -208,11 +303,12 @@ Bindings remain in the game's current account/character binding set.
 ## Chat commands
 
 Each command toggles its Lens Effect; the Effect must be enabled on the main ret_Cinema page and
-have **Apply Effect to Lens** checked. CameraShift also requires consent.
+have **Apply … to Lens** checked. CameraShift also requires consent.
 
 - `/retcin hideui`
 - `/retcin showletterbox`
 - `/retcin camerashift`
+- `/retcin fov`
 - `/retcin combinedlens` or `/retcin combinedlens1` (first Combined Lens)
 - `/retcin combinedlens2` through `/retcin combinedlens5` (only after adding them)
 - `/retcin` (settings)
@@ -221,23 +317,57 @@ have **Apply Effect to Lens** checked. CameraShift also requires consent.
 `/retcin combinedlens1` address the same first lens. The old `/retcin combined`
 alias and unused macro-text generation helper remain removed.
 
-## Trigger
+## LiteRP
 
-The **Trigger** child page connects one individual or Combined Lens to the game's
-**Run/Walk** action. Enable Trigger and select its Lens. The page shows the current
-native Run/Walk key and explains when the selected target is unavailable.
-Each Run/Walk action toggles the selected Lens while retaining the normal movement
-action. The existing keybinding is never reassigned. Changing that binding in
-WoW automatically changes which key activates the Trigger.
+Check **[additional] LiteRP** in Advanced Cinematographer to reveal its child page
+and initialize its integration. **Do** gates Walk; **Stay** gates Sit, Lay, Lean
+and GoOffline. Switching off a parent stops its active actions and preserves its
+children's saved selections. Old profiles infer these parent settings from their
+existing actions during migration.
 
-The implementation post-hooks Blizzard's `ToggleRun`, called by the `TOGGLERUN`
-binding ([Blizzard binding source](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_FrameXML/Bindings_Standard.xml)).
-The hook is installed only after enabling Trigger. It performs no keyboard polling,
-OnUpdate work, timers or new keybinding registrations. Once installed it remains
-a lightweight no-op when disabled. Disabled, unapplied, empty or hidden targets
-perform no Lens action; the game Run/Walk action still executes. Trigger preferences
-are stored per profile. The feature needs an in-game check on both supported clients.
+**Do → Walk** keeps its selected Lens active while walk mode is enabled, including
+when the character stops moving. Native Run/Walk changes update the known mode;
+the existing game binding is never replaced. On initial synchronization, movement
+speed is sampled after native actions in short bounded checks. While stationary,
+an unknown initial mode is not guessed: move once to synchronize, or use **Walking
+mode is currently enabled** to match the current mode explicitly. This helper is
+smaller and gray, with an orange Warning prefix in its tooltip. This checkbox
+synchronizes the addon and does not change game movement. Once the mode is known,
+no speed polling or movement ticker is needed, and speed buffs do not change it.
 
+**Stay** provides separate **Sit**, **Lay** and **Lean** checkboxes, each revealing
+its own Lens selector beneath the checkbox, matching Walk. A separator divides
+Do and Stay. Native sit actions and `/sit`, `/lay`, `/sleep`, `/lean`
+emotes are recognized while stationary on the ground. Moving or `/stand` ends the
+pose. Switching poses replaces the previous pose's Lens. If walk mode is still
+active, ending a pose returns to the walking Lens; otherwise it returns to the
+scene captured before LiteRP. Special native animation restrictions still need
+client testing because this is action-based detection, not a direct posture query.
+
+**GoOffline** has an enable checkbox and an adjacent button that remains disabled
+until enabled. Clicking the button opens a separate settings window with editable
+starting/minimum and maximum bar heights, plus the duration and growth rate of
+three stages. The window is created on first use; clicking again or pressing Esc
+closes it. Every field has a default tooltip
+and undo button. Defaults add 2 percentage points per second for 10 seconds, then
+3 for 6 seconds, then 4 for 3 seconds, capped at 50% per bar. Existing bars can
+provide a higher starting value. The native countdown is always 20 seconds; a
+longer configured plan is cut short, and a shorter plan holds its final height.
+Canceling the native logout/quit countdown stops GoOffline growth immediately
+and restores the previous bars in **0.15 seconds**, regardless of a longer saved
+Letterbox duration. The native `CancelLogout` call is observed with a secure
+post-hook, alongside `LOGOUT_CANCEL`; the addon never calls CancelLogout itself
+and does not alter the game's countdown or cancellation behavior. Opening
+the game menu alone does not start the preset, and immediate logout has no countdown.
+
+LiteRP is the child category; Walk, Stay and GoOffline are its actions.
+While any action owns the scene, Combined Lenses temporarily use ordinary toggle
+behavior, preserving their saved Escape Button preferences. Ending the action
+restores that preference. Physical Esc can still end temporary effects. Hidden, disabled or empty targets do not activate
+effects. LiteRP unregisters events and removes its countdown callback when unused.
+Its runtime is initialized on first enabling the Advanced feature, and each native
+hook is installed only when its corresponding integration is needed. Preferences
+are saved with the profile.
 ## Profiles
 
 The **Profiles** child category provides an active-profile selector, **Create New**,
@@ -256,8 +386,9 @@ Effects are then applied. Recovery snapshots and experimental-camera consent are
 account-wide and excluded from copies and exports. WoW key assignments remain in
 the game's current binding set and are not changed by profile operations.
 
-Exports use `RETCINEMA_PROFILE:5|...`, including Trigger preferences and independent
-Combined Lens values. Versions 1–4 remain supported; version 1 imports with one
+Exports use `RETCINEMA_PROFILE:9|...`, including Advanced options, individual Stay
+targets, GoOffline stages, FOV, camera options and independent Combined Lens values.
+Versions 1–8 remain supported; version 1 imports with one
 Combined Lens. Existing inherited values are copied into each additional lens
 once during migration, while old custom values are preserved. The inheritance
 flags are then removed from active settings and new exports.
@@ -276,8 +407,8 @@ gray text. **boosty.to / Copy link** provides
 **Хардрес-РевущийФьорд**, displayed in the Paladin class color; its copy button
 preserves the exact in-game identifier.
 
-Below the character is **Wish Board**, a local feature browser with statuses such
-as Under consideration and In development. Click a feature to read its description.
+A narrower **Wish Board** button sits directly below Version. It opens a local feature browser with statuses such
+as Available, Experimental and Under consideration. Click a feature to read its description.
 It is built only on first use, sends no votes or messages, and runs no background work.
 
 ## Performance and recovery
@@ -285,11 +416,14 @@ It is built only on first use, sends no votes or messages, and runs no backgroun
 Disabled Effects have no animation callbacks or periodic work. Settings pages
 and their optional permanent controls are built only when opened or needed.
 Bars and the camera animator are allocated on first use. An OnUpdate callback
-runs only during a transition or minimap drag, and is removed on completion.
+runs only during a transition, enabled logout countdown or minimap drag, and is removed on completion.
 Permanent Effects have no continuous Lua updates while stationary. Hidden
 Letterbox bars unregister their screen/scale events and size handler; their layout
 is refreshed when shown again. Unrelated popups return immediately from the camera
 warning hook.
+The FOV animator is also lazy and removes its callback after each transition.
+LiteRP runtime functions, hooks and event frames are initialized only on first
+enabling its Advanced feature; disabled integrations do not install unused hooks.
 
 The Escape listener is shown only while temporary Lens Effects or a Combined
 snapshot is active. Lens listens for binding updates only while its page is open;
@@ -298,7 +432,7 @@ A small visibility hook keeps HideUI active if the game shows the interface.
 Camera-warning handling is installed only after a consented camera write and
 checks only the named warning and proximity to ret_Cinema's own writes.
 
-Original names and camera CVars are recovered on ordinary logout or reload.
+Original names, camera and FOV CVars are recovered on ordinary logout or reload.
 Abnormal process termination cannot guarantee that saved state reached disk.
 Disabling an Effect does not unload its Lua or destroy already-created frames;
 a reload avoids creating unused settings and runtime frames. The addon does not

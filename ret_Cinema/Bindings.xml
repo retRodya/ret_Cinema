@@ -11,6 +11,9 @@
     <Binding name="RETCINEMA_CAMERA" category="ADDONS">
         RetCinema_RunBinding("RETCINEMA_CAMERA")
     </Binding>
+    <Binding name="RETCINEMA_FOV" category="ADDONS">
+        RetCinema_RunBinding("RETCINEMA_FOV")
+    </Binding>
     <Binding name="RETCINEMA_COMBINED2" category="ADDONS">
         RetCinema_ToggleCombined(2)
     </Binding>

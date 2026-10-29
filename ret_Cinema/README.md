@@ -27,35 +27,50 @@ letterbox effects.
 ## Settings
 
 Open ret_Cinema from the Addon Compartment, the minimap icon, or `/retcin`
-(`/retcinema` is also supported). The main **ret_Cinema** page links to its native
-child categories, in order: **General**, **Effect**, **Lens**, **Profiles**, **Support**.
+(`/retcinema` is also supported). The main **ret_Cinema** page contains the
+description, minimap switch, Effect switches, Advanced Cinematographer and credits.
+Its child categories are **Effect**, **Lens**, **Trigger**, **Profiles**, and **Support**.
+There is no separate General category.
+
 Lens appears only while at least one enabled Effect also has **Apply Effect to Lens**
 checked. Disabling an Effect retains its saved Apply preference but removes its
 Lens row; if no eligible Effects remain, the Lens category disappears.
 
-**General** contains the description, minimap switch, Effect switches and credits.
-**Effect** groups the **HideUI**, **Letterbox**, **CameraShift**, **FOV**, and
-**SmoothMotion** tabs, wrapping after at most four tabs per row. It contains no
-Lens tab. Effect controls are created only when their enabled tab is opened.
+**Effect** shows one centered selector for the current Effect. Its dropdown lists
+enabled **HideUI**, **Letterbox**, **CameraShift**, **FOV**, and **SmoothMotion**.
+The selected Effect uses the standard yellow text; there are no side arrows or
+extra divider beneath the selector. Effect controls are created only
+when their enabled page is opened.
+Descriptions and hints have a blank-line gap before the controls.
 
 Page titles use the standard `GameFontHighlightHuge` and
 `Options_HorizontalDivider` styling. The visible **ret_** prefix is lime green
-(`#9ACD32`) in addon titles, credits and text. Other hyperlinks are white; Lens
-navigation stays blue. Tabs for Effects under consideration are orange, while
-unavailable controls remain gray. Identifiers, paths and copied URLs are unchanged.
+(`#9ACD32`) in addon titles, credits and text. **Cinema** in the addon title,
+other hyperlinks and Lens navigation are blue. **FOV** and **SmoothMotion** names
+are gray in both the main-page switches and the Effect selector. Other options
+under consideration and **Experimental** labels are orange. Identifiers, paths and copied URLs are unchanged.
 
-### General
+### Main ret_Cinema page
 
 The description reads `## Notes:` directly from `ret_Cinema.toc`.
 **Show minimap icon** controls the draggable minimap button.
-**Enable Effect modules:** enables or disables each Effect's runtime and settings
+**Enable Effect:** enables or disables each Effect's runtime and settings
 tab. Disabling an Effect immediately stops its work and restores its temporary
 changes. Existing Lens assignments are retained. Enable switches use four cells
-per row. A Lens row requires both the General enable switch and the Effect's own
+per row. A Lens row requires both the main-page enable switch and the Effect's own
 **Apply Effect to Lens** switch.
 
-The General hint is: "Turn on the Permanent Effect as well as applying this
+The main-page hint is: "Turn on the Permanent Effect as well as applying this
 Effect to your Lens." Permanent and Lens settings are independent.
+
+**Advanced Cinematographer** appears beside **Show minimap icon**. Checking it
+turns its label into a button opening five gray, disabled options. Its tooltip
+reads "Experimental. Allow access to additional options.", with Experimental in
+orange. The planned options are:
+**Letterbox Transparency**, **Letterbox Animation speed**, **CameraShift Animation
+speed**, **Second Lens button**, and **More Combined Lens**. Each disabled checkbox
+has an orange **Under consideration** tooltip. The Advanced switch is saved with
+the profile; these placeholders do not alter existing Effect or Lens behavior.
 
 Credits include icon 136034 and links to ret_, Cinematic, and DynamicCam.
 **Need a bug fix or a new feature? Ask for it!** above the credits provides the GitHub issue address for a bug
@@ -77,8 +92,9 @@ and combat do not cancel the Effect.
 
 **Permanent Letterbox** enables persistent black bars with their own **Permanent bar height**
 slider and editable percentage. **Apply Effect to Lens** reveals a separate
-**Lens bar height** control. **Enable animation** appears next to **Apply Effect to Lens**
-only while Apply is checked.
+**Lens bar height** control. Letterbox animations are always enabled; the old
+**Enable animation** switch and preference are removed. Each control occupies
+less than half the available row width, leaving room for another beside it.
 Each bar supports 0–25% of screen height in 0.1% steps.
 
 The permanent height may be greater or smaller than the Lens height. Activating
@@ -89,13 +105,13 @@ Saved permanent bars reappear at login or reload; the Lens Effect starts inactiv
 
 ### CameraShift
 
-Before consent, only **Allow Blizzard experimental camera feature** is shown.
-Checking it reveals **Permanent CameraShift** and **Apply Effect to Lens** above
-the consent box, and a standard-size yellow explanation below it. Their separate
-controls are named **Permanent shoulder camera offset** and **Lens shoulder camera
-offset**, from -15 to 15 in 0.1 steps. Consent is saved; withdrawing it hides the
-controls and restores the original camera settings. The consent checkbox reserves
-the same position as when both control groups are expanded, so it never jumps.
+Enabling **CameraShift** in **Enable Effect:** on the main page also grants consent
+to its experimental camera changes. The checkbox tooltip explains this choice.
+Without prior consent, CameraShift starts disabled until the checkbox is enabled.
+The Effect page contains **Permanent CameraShift** and **Apply Effect to Lens**
+with their compact, editable **Permanent shoulder camera offset** and
+**Lens shoulder camera offset** sliders, from -15 to 15 in 0.1 steps. There is no
+separate permission checkbox or camera-settings explanation block on this page.
 
 CameraShift changes only shoulder offset and the two motion-sickness settings
 needed for it. It does not run `ActionCam full` or enable unrelated ActionCam
@@ -122,7 +138,7 @@ camera controls and show a message.
 
 ### FOV and SmoothMotion
 
-Both Effects are under consideration and have orange tabs. Their Permanent and
+Both Effects are under consideration and have gray names in the switches and selector. Their Permanent and
 Apply controls and sliders are inactive placeholders. FOV shows **Permanent FOV**,
 **Apply FOV to Lens**, and a field-of-view slider; SmoothMotion shows a smoothing
 slider. Neither creates a runtime Effect, Lens row, shortcut or camera CVar change.
@@ -131,42 +147,67 @@ slider. Neither creates a runtime Effect, Lens row, shortcut or camera CVar chan
 
 The table has **Effect**, **Lens button**, and **Add to Combined Lens** columns.
 With two or more Combined Lenses, the last column becomes **Add to a specific
-Combined Lens**, with a numbered checkbox for each lens. Hover a checkbox to see
+Combined Lens**, with numbered checkboxes arranged horizontally for each Effect.
+A fixed extra gap before checkbox 2 separates the first lens from additional ones
+and aligns that column across all Effect rows. Hover a checkbox to see
 both the Effect name and the target Combined Lens number. Click a slot, then press a key combination. Right-click clears the slot;
 Esc cancels capture. An individual Effect offers a second slot below its first,
 separated by **or**, once the first key is assigned. Unassigned slots show
 **Not bound** in gray. Binding status text is 1.5 times the standard font size.
 Bindings cannot be edited during combat; existing shortcuts and Effects still work.
 
-The Combined Lens container remains below the individual Effects. **Add another
-Combined Lens** adds another configuration, up to five. The first lens is named
-**Combined Lens** until a second is added, then becomes **Combined Lens 1**.
-Each lens always offers two binding slots and its own exit selector. Dividers
-separate the configurations inside the same container. New lenses start with no
-Effects selected and do not change existing selections or keys.
+The Combined Lens container remains below the individual Effects. Small **+** and
+**-** buttons sit together at its bottom. **+** adds another configuration, up to
+five; **-** hides the last additional lens, down to one. Both buttons remain
+visible and disable at their limits; hiding is blocked in combat. Hiding an active
+lens restores its activation snapshot and keeps its settings, selections and game
+keybindings. **+** reveals the same slot with those preferences and shortcuts.
+A shortcut for a hidden slot performs no Lens action until the slot is shown again.
+
+The first lens is named **Combined Lens** until a second is added, then becomes
+**Combined Lens 1**. Each lens always offers two binding slots and its own
+**Escape Button** checkbox beneath its two key slots. To the right of the first
+slot, a comma-separated list shows the enabled Effects selected for that lens.
+Dividers separate the configurations inside the same
+container. Fresh slots start with no Effects selected; re-shown slots retain theirs.
+
+When two or more Combined Lenses exist, each Effect row has a gear button to the
+right of its membership checkboxes. It opens an Effect settings window with a
+centered **Combined Lens 2–5** selector. Letterbox and CameraShift each show only
+the independent height or shoulder-offset slider; there is no Apply checkbox or
+Use Effect settings switch in those dialogs. Membership is managed by the table.
+HideUI retains its membership checkbox and has no numeric settings. Changes apply
+on the next activation; the first Combined Lens uses the main Effect settings.
+
+Custom numeric settings are saved with the profile and do not change other
+lenses or permanent settings. Activating a custom Effect replaces its current
+Lens value if already active; exiting restores the prior Lens value and active
+state. Esc and Escape Button restore permanent/original settings as usual.
 
 Hover an Effect name for its chat command; hover a Combined Lens name for its
 numbered command. Chat commands and shortcuts call the same toggle functions;
 they do not execute a stored macro.
 
-The **Second Button press exit:** selector provides:
+For each Combined Lens, **Escape Button** controls its second press:
 
-- **All Lenses**: a second Combined press ends every active temporary Lens Effect,
-  including Effects not added to Combined, playing their exit animations.
-- **Only added Lenses**: restores the states captured for the Effects added when
-  Combined was first pressed. Unselected Lens Effects stay as they are.
+- Checked: the first press applies its Effects. A second consecutive press exits
+  all temporary Lens Effects with their return animations. Activating any other
+  individual or Combined Lens resets the sequence, so the next press applies its
+  Effects again. Permanent settings remain the baseline.
+- Unchecked: restores only the states captured for its selected Effects at entry.
+  Unselected Lens Effects keep their current state.
 
 Permanent Effects remain the baseline in either case. Esc ends all temporary Lens
 Effects and returns to permanent/original settings. Esc retains its normal game
 menu behavior. Each Combined Lens remembers its own activation snapshot, including
-when lenses share Effects. Esc and **All Lenses** clear all Combined snapshots.
+when lenses share Effects. Esc and a checked **Escape Button** clear all Combined snapshots.
 Disabling or unapplying an Effect removes it from every active snapshot.
 The first Combined Lens retains its old binding ID; lenses 2–5 have separate IDs.
 Bindings remain in the game's current account/character binding set.
 
 ## Chat commands
 
-Each command toggles its Lens Effect; the Effect must be enabled in General and
+Each command toggles its Lens Effect; the Effect must be enabled on the main ret_Cinema page and
 have **Apply Effect to Lens** checked. CameraShift also requires consent.
 
 - `/retcin hideui`
@@ -176,13 +217,33 @@ have **Apply Effect to Lens** checked. CameraShift also requires consent.
 - `/retcin combinedlens2` through `/retcin combinedlens5` (only after adding them)
 - `/retcin` (settings)
 
-`/retcinema` accepts the same commands. The redundant `/retcin combined` alias
-has been removed, along with the unused macro-text generation helper.
+`/retcinema` accepts the same commands. `/retcin combinedlens` and
+`/retcin combinedlens1` address the same first lens. The old `/retcin combined`
+alias and unused macro-text generation helper remain removed.
+
+## Trigger
+
+The **Trigger** child page connects one individual or Combined Lens to the game's
+**Run/Walk** action. Enable Trigger and select its Lens. The page shows the current
+native Run/Walk key and explains when the selected target is unavailable.
+Each Run/Walk action toggles the selected Lens while retaining the normal movement
+action. The existing keybinding is never reassigned. Changing that binding in
+WoW automatically changes which key activates the Trigger.
+
+The implementation post-hooks Blizzard's `ToggleRun`, called by the `TOGGLERUN`
+binding ([Blizzard binding source](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_FrameXML/Bindings_Standard.xml)).
+The hook is installed only after enabling Trigger. It performs no keyboard polling,
+OnUpdate work, timers or new keybinding registrations. Once installed it remains
+a lightweight no-op when disabled. Disabled, unapplied, empty or hidden targets
+perform no Lens action; the game Run/Walk action still executes. Trigger preferences
+are stored per profile. The feature needs an in-game check on both supported clients.
 
 ## Profiles
 
 The **Profiles** child category provides an active-profile selector, **Create New**,
 **Export**, **Import**, **Copy from profile**, and **Delete Profile** controls.
+Selectors display a dropdown arrow and left-aligned value. **Create New** is
+right-aligned beneath the active-profile selector.
 New profiles use default settings and become active immediately. Copy replaces
 the active profile's preferences with those of the selected source, retaining the
 active profile's name. Deletion requires confirmation; the active profile cannot
@@ -195,9 +256,13 @@ Effects are then applied. Recovery snapshots and experimental-camera consent are
 account-wide and excluded from copies and exports. WoW key assignments remain in
 the game's current binding set and are not changed by profile operations.
 
-Exports use the versioned `RETCINEMA_PROFILE:2|...` format, including the Combined
-Lens count and each lens's selections and exit policy. Version 1 exports remain
-supported and import with one Combined Lens. Imports are parsed as
+Exports use `RETCINEMA_PROFILE:5|...`, including Trigger preferences and independent
+Combined Lens values. Versions 1–4 remain supported; version 1 imports with one
+Combined Lens. Existing inherited values are copied into each additional lens
+once during migration, while old custom values are preserved. The inheritance
+flags are then removed from active settings and new exports.
+Old animation preferences are validated on import and then discarded, so an old
+export cannot disable Letterbox animations. Imports are parsed as
 data, never executed, and validate required fields, types, ranges, names, size,
 and duplicates. Import creates and activates a new profile, adding an Imported
 suffix if the name already exists. Unknown fields and formats are rejected.
@@ -205,9 +270,15 @@ suffix if the name already exists. Unknown fields and formats are rejected.
 ## Support
 
 The **Support** child category has a CurseForge placeholder marked **Coming soon**
-until a project URL is available. **boosty.to / Copy link** provides
+until a project URL is available, with the current TOC version beneath it in small
+gray text. **boosty.to / Copy link** provides
 `https://boosty.to/ret_ro`. The Retail Horde recipient is
-**Хардрес-РевущийФьорд**; its copy button preserves the exact in-game identifier.
+**Хардрес-РевущийФьорд**, displayed in the Paladin class color; its copy button
+preserves the exact in-game identifier.
+
+Below the character is **Wish Board**, a local feature browser with statuses such
+as Under consideration and In development. Click a feature to read its description.
+It is built only on first use, sends no votes or messages, and runs no background work.
 
 ## Performance and recovery
 
@@ -215,7 +286,10 @@ Disabled Effects have no animation callbacks or periodic work. Settings pages
 and their optional permanent controls are built only when opened or needed.
 Bars and the camera animator are allocated on first use. An OnUpdate callback
 runs only during a transition or minimap drag, and is removed on completion.
-Permanent Effects have no continuous Lua updates while stationary.
+Permanent Effects have no continuous Lua updates while stationary. Hidden
+Letterbox bars unregister their screen/scale events and size handler; their layout
+is refreshed when shown again. Unrelated popups return immediately from the camera
+warning hook.
 
 The Escape listener is shown only while temporary Lens Effects or a Combined
 snapshot is active. Lens listens for binding updates only while its page is open;
@@ -230,9 +304,15 @@ Disabling an Effect does not unload its Lua or destroy already-created frames;
 a reload avoids creating unused settings and runtime frames. The addon does not
 load DynamicCam libraries.
 
+The CPU percentage alone cannot identify a live background loop. Blizzard's addon
+list tooltip uses session-average profiling, which includes loading and settings
+work ([Blizzard profiler display](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_AddOnList/AddonList.lua)).
+Current in-game profiling is needed to explain a specific 0.02% reading. The local
+behavior tests verify that idle Effects have no OnUpdate handlers or screen events.
+
 ## Editing UI text
 
-Change `## Notes:` in `ret_Cinema.toc` for General's addon description. Change
+Change `## Notes:` in `ret_Cinema.toc` for the main page's addon description. Change
 `ns.generalHint`, `ns.lens`, or entries in `ns.effects` in `Core.lua` for the
 corresponding headings, hints, and Effect names. `description` is the larger
 yellow heading, and `hint` is the standard-size yellow explanation below it.

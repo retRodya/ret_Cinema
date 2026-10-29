@@ -4,13 +4,16 @@ ns.Profiles = Profiles
 
 -- Profiles contain preferences only. Recovery CVars, consent and game keybindings
 -- stay outside this schema and can never be supplied by an import.
--- Schema entries: path, default, minimum, maximum, first format version, integer-only.
+-- Schema entries: path, default, minimum, maximum, first version, integer-only, last version.
 local fields = {
     { "showMinimapButton", true }, { "minimapAngle", 220, -360, 360 },
     { "letterboxHeight", 10, 0, 25 }, { "permanentLetterboxHeight", 10, 0, 25 },
-    { "enableAnimation", true }, { "permanentLetterbox", false },
+    { "enableAnimation", true, nil, nil, 1, nil, 2 }, { "permanentLetterbox", false },
     { "cameraOffset", 1.5, -15, 15 }, { "permanentCameraOffset", 1.5, -15, 15 },
     { "permanentCameraShift", false }, { "combinedAsEsc", false },
+    { "advancedCinematographer", false, nil, nil, 3 },
+    { "triggerEnabled", false, nil, nil, 5 }, { "triggerTarget", 0, 0, 7, 5, true },
+    { "lensValuesVersion", 1, 1, 1, 5, true },
 }
 for _, effect in ipairs(ns.effects) do fields[#fields + 1] = { "effects." .. effect.id, true, nil, nil, effect.id == "fov" and 2 or 1 } end
 for _, action in ipairs(ns.actions) do
@@ -21,12 +24,19 @@ fields[#fields + 1] = { "combinedLensCount", 1, 1, 5, 2, true }
 for index = 2, 5 do
     local prefix = "extraCombinedLenses." .. index
     fields[#fields + 1] = { prefix .. ".exitAll", false, nil, nil, 2 }
+    fields[#fields + 1] = { prefix .. ".customLetterbox", false, nil, nil, 4, nil, 4 }
+    fields[#fields + 1] = { prefix .. ".letterboxHeight", 10, 0, 25, 4 }
+    fields[#fields + 1] = { prefix .. ".customCameraShift", false, nil, nil, 4, nil, 4 }
+    fields[#fields + 1] = { prefix .. ".cameraOffset", 1.5, -15, 15, 4 }
     for _, action in ipairs(ns.actions) do
         fields[#fields + 1] = { prefix .. ".actions." .. action.binding, false, nil, nil, 2 }
     end
 end
 local byKey = {}
 for _, field in ipairs(fields) do byKey[field[1]] = field end
+local function InVersion(field, version)
+    return (field[5] or 1) <= version and (not field[7] or field[7] >= version)
+end
 
 local function Read(settings, path)
     local value = settings
@@ -53,10 +63,20 @@ local function Valid(field, value)
 end
 local function Snapshot(source)
     local result = {}
+    source = source or {}
     for _, field in ipairs(fields) do
-        local value = Read(source or {}, field[1])
-        if not Valid(field, value) then value = field[2] end
-        Write(result, field[1], value)
+        if InVersion(field, 5) then
+            local value = Read(source, field[1])
+            if source.lensValuesVersion ~= 1 then
+                local prefix, key = field[1]:match("^(extraCombinedLenses%.[2-5])%.([%w]+)$")
+                if prefix and (key == "letterboxHeight" or key == "cameraOffset") then
+                    local legacyFlag = key == "letterboxHeight" and "customLetterbox" or "customCameraShift"
+                    if Read(source, prefix .. "." .. legacyFlag) ~= true then value = source[key] end
+                end
+            end
+            if not Valid(field, value) then value = field[2] end
+            Write(result, field[1], value)
+        end
     end
     result.lensEffects.smoothmotion = false
     result.lensEffects.fov = false
@@ -151,19 +171,21 @@ function Profiles.Export()
     Profiles.Save()
     local values = {}
     for _, field in ipairs(fields) do
-        local value = Read(ns.db.profiles[ns.db.activeProfile], field[1])
-        if type(value) == "boolean" then value = value and "true" or "false"
-        else value = string.format("%.17g", value) end
-        values[#values + 1] = field[1] .. "=" .. value
+        if InVersion(field, 5) then
+            local value = Read(ns.db.profiles[ns.db.activeProfile], field[1])
+            if type(value) == "boolean" then value = value and "true" or "false"
+            else value = string.format("%.17g", value) end
+            values[#values + 1] = field[1] .. "=" .. value
+        end
     end
-    return "RETCINEMA_PROFILE:2|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
+    return "RETCINEMA_PROFILE:5|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
 end
 function Profiles.Import(text)
     local ok, errorText = CanChange()
     if not ok then return false, errorText end
     if type(text) ~= "string" or #text > 16384 then return false, "Invalid profile export." end
     text = text:match("^%s*(.-)%s*$")
-    local version, encodedName, payload = text:match("^RETCINEMA_PROFILE:([12])|([^|]+)|([^|]+)$")
+    local version, encodedName, payload = text:match("^RETCINEMA_PROFILE:([12345])|([^|]+)|([^|]+)$")
     if not version then return false, "Unsupported or invalid profile export." end
     version = tonumber(version)
     local name = Name(Decode(encodedName))
@@ -172,7 +194,7 @@ function Profiles.Import(text)
     for entry in payload:gmatch("[^;]+") do
         local key, raw = entry:match("^([%w_.]+)=(.+)$")
         local field = key and byKey[key]
-        if not field or (field[5] or 1) > version or seen[key] then return false, "Invalid or duplicate profile setting." end
+        if not field or not InVersion(field, version) or seen[key] then return false, "Invalid or duplicate profile setting." end
         local value
         if type(field[2]) == "boolean" then
             if raw == "true" then value = true elseif raw == "false" then value = false
@@ -183,7 +205,7 @@ function Profiles.Import(text)
         seen[key], count = true, count + 1
     end
     local required = 0
-    for _, field in ipairs(fields) do if (field[5] or 1) <= version then required = required + 1 end end
+    for _, field in ipairs(fields) do if InVersion(field, version) then required = required + 1 end end
     if count ~= required or payload:find(";;", 1, true) or payload:sub(1, 1) == ";" or payload:sub(-1) == ";" then
         return false, "Incomplete or invalid profile export."
     end

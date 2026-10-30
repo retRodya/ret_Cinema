@@ -19,6 +19,7 @@ local fields = {
     { "roleplaySit", false, nil, nil, 6 }, { "roleplayLay", false, nil, nil, 6 },
     { "roleplayLean", false, nil, nil, 6 }, { "roleplayLogout", false, nil, nil, 6 },
 }
+fields[#fields + 1] = { "globalPreset", "Default", nil, nil, 12 }
 fields[#fields + 1] = { "roleplayLogoutTarget", -1, -1, 8, 10, true }
 for _, kind in ipairs({ "Sit", "Lay", "Lean" }) do fields[#fields + 1] = { "roleplay" .. kind .. "Target", 0, 0, 8, 7, true } end
 for _, spec in ipairs(ns.roleplayNumbers) do fields[#fields + 1] = { spec.key, spec.default, spec.low, spec.high, 7 } end
@@ -50,7 +51,11 @@ for index = 2, 5 do
     end
 end
 local byKey = {}
-for _, field in ipairs(fields) do byKey[field[1]] = field end
+for _, field in ipairs(fields) do
+    byKey[field[1]] = field
+    if field[1] ~= "globalPreset" then ns.presets[1].values[field[1]] = field[2] end
+end
+ns.presets[1].values["effects.camerashift"] = false
 local function InVersion(field, version)
     return (field[5] or 1) <= version and (not field[7] or field[7] >= version)
 end
@@ -74,6 +79,7 @@ local function Write(settings, path, value)
     settings[keys[#keys]] = value
 end
 local function Valid(field, value, version)
+    if field[1] == "globalPreset" then return value == "Default" or value == "ret_like" end
     if type(field[2]) == "boolean" then return type(value) == "boolean" end
     if version and version < 6 and field[1] == "triggerTarget" and type(value) == "number" and value > 7 then return false end
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge and
@@ -83,7 +89,7 @@ local function Snapshot(source)
     local result = {}
     source = source or {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 11) then
+        if InVersion(field, 12) then
             local value = Read(source, field[1])
             if value == nil then
                 for _, option in ipairs(ns.advancedOptions) do
@@ -116,7 +122,7 @@ local function Snapshot(source)
                     if Read(source, prefix .. "." .. legacyFlag) ~= true then value = source[key] end
                 end
             end
-            if not Valid(field, value) then value = field[2] end
+            if not Valid(field, value) then value = ns.PresetDefault(field[1], field[2], source) end
             if field[1] == "fov" or field[1] == "permanentFov" or field[1]:match("^extraCombinedLenses%.[2-5]%.fov$") then
                 local low, high = ns.FOVRange()
                 value = math.max(low, math.min(high, value))
@@ -217,14 +223,14 @@ function Profiles.Export()
     Profiles.Save()
     local values = {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 11) then
+        if InVersion(field, 12) then
             local value = Read(ns.db.profiles[ns.db.activeProfile], field[1])
             if type(value) == "boolean" then value = value and "true" or "false"
-            else value = string.format("%.17g", value) end
+            elseif type(value) == "number" then value = string.format("%.17g", value) end
             values[#values + 1] = field[1] .. "=" .. value
         end
     end
-    return "RETCINEMA_PROFILE:11|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
+    return "RETCINEMA_PROFILE:12|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
 end
 function Profiles.Import(text)
     local ok, errorText = CanChange()
@@ -233,7 +239,7 @@ function Profiles.Import(text)
     text = text:match("^%s*(.-)%s*$")
     local version, encodedName, payload = text:match("^RETCINEMA_PROFILE:(%d+)|([^|]+)|([^|]+)$")
     version = tonumber(version)
-    if not version or version < 1 or version > 11 then return false, "Unsupported or invalid profile export." end
+    if not version or version < 1 or version > 12 then return false, "Unsupported or invalid profile export." end
     local name = Name(Decode(encodedName))
     if not name then return false, "Invalid profile name in export." end
     local settings, seen, count = {}, {}, 0
@@ -242,7 +248,8 @@ function Profiles.Import(text)
         local field = key and byKey[key]
         if not field or not InVersion(field, version) or seen[key] then return false, "Invalid or duplicate profile setting." end
         local value
-        if type(field[2]) == "boolean" then
+        if field[1] == "globalPreset" then value = raw
+        elseif type(field[2]) == "boolean" then
             if raw == "true" then value = true elseif raw == "false" then value = false
             else return false, "Invalid profile setting." end
         else value = tonumber(raw) end

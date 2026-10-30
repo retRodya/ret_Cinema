@@ -97,10 +97,15 @@ function Frame:GetFontString()
     return self.fontString
 end
 function Frame:SetValue(value)
+    if self.obeyStep and self.valueStep then value = math.floor(value / self.valueStep + 0.5) * self.valueStep end
     if self.value == value then return end
     self.value = value
     if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, value) end
 end
+function Frame:SetValueStep(step) self.valueStep = step end
+function Frame:SetObeyStepOnDrag(obey) self.obeyStep = obey end
+function Frame:IsEnabled() return self.enabled ~= false end
+function Frame:IsVisible() return self:IsShown() and (not self.parent or self.parent:IsVisible()) end
 function Frame:SetFocus()
     focusedFrame = self
     self.focused = true
@@ -155,7 +160,7 @@ function StaticPopup_Show(name)
     if StaticPopupDialogs[name] and StaticPopupDialogs[name].OnShow then StaticPopupDialogs[name].OnShow(lastPopup) end
     return lastPopup
 end
-function StaticPopup_Hide(name) if name == lastPopupName then lastPopup:Hide() end end
+function StaticPopup_Hide(name) if popupFrames[name] then popupFrames[name]:Hide() end end
 function StaticPopup_FindVisible(name) local frame = popupFrames[name]; return frame and frame:IsShown() and frame or nil end
 local secureHookCalls = {}
 local nativeWalkCalls = 0
@@ -255,7 +260,6 @@ local cvars = {
 local logoutCancelCalls = 0
 function CancelLogout()
     logoutCancelCalls = logoutCancelCalls + 1
-    for _, name in ipairs({ "CAMP", "QUIT" }) do if popupFrames[name] then popupFrames[name]:Hide() end end
 end
 function GetCameraFOVDefaults() return 90, 60, 90 end
 function GetCVar(name) return cvars[name] end
@@ -726,7 +730,7 @@ local function ToV5(text)
     text = text:gsub("PROFILE:%d+", "PROFILE:5")
     return (text:gsub(";([%w_.]+)=([^;]+)", function(key, value)
         if key == "effects.fov" then return ";" .. key .. "=" .. value end
-        if key:match("^advanced%.") or key:match("^roleplay") or newKeys[key:match("([^.]+)$")] then return "" end
+        if key == "globalPreset" or key:match("^advanced%.") or key:match("^roleplay") or newKeys[key:match("([^.]+)$")] then return "" end
         return ";" .. key .. "=" .. value
     end))
 end
@@ -1508,7 +1512,7 @@ do
     ns.SetLetterboxHeight(17.2)
     ns.SetMinimapButton(false)
     local exported = ns.Profiles.Export()
-    assert(exported:find("RETCINEMA_PROFILE:11|Photo|", 1, true) == 1)
+    assert(exported:find("RETCINEMA_PROFILE:12|Photo|", 1, true) == 1)
     assert(not exported:find("cameraConsent", 1, true) and not exported:find("cameraRestore", 1, true))
     assert(ns.Profiles.CopyFrom("Default"))
     assert(ns.Profiles.Current() == "Photo" and ns.db.permanentLetterbox and cvars.test_cameraOverShoulder == "3")
@@ -1535,7 +1539,7 @@ do
     assert(ns.Profiles.Delete("Photo") and not ns.db.profiles.Photo)
     local count = #ns.Profiles.List()
     for _, bad in ipairs({
-        "return _G", exported:gsub("PROFILE:11", "PROFILE:12"),
+        "return _G", exported:gsub("PROFILE:12", "PROFILE:13"),
         exported .. ";cameraConsent=true", exported .. ";letterboxHeight=5",
         exported:gsub("letterboxHeight=17.199999999999999", "letterboxHeight=1e999"),
         exported:gsub("showMinimapButton=false;", ""), exported .. ";;",
@@ -1585,7 +1589,7 @@ do
     ns.SetLetterboxHeight(13.4)
     click(childButton("Export"))
     local exportString = RetCinemaCopyDialog.editBox:GetText()
-    assert(exportString:find("RETCINEMA_PROFILE:11|UI Profile|", 1, true) == 1)
+    assert(exportString:find("RETCINEMA_PROFILE:12|UI Profile|", 1, true) == 1)
     RetCinemaCopyDialog:Hide()
     click(childButton("Import"))
     RetCinemaProfileDialog.editBox:SetText("invalid")
@@ -2051,7 +2055,7 @@ do
     assert(center == 276 + 240 / 2, "The complete membership container must be centered under the third column")
     local summary = binding("RETCINEMA_COMBINED", 1).parent.summary
     assert(summary.justifyH == "CENTER" and 12 + summary.points.TOPLEFT[1] + summary:GetWidth() / 2 == center)
-    assert(general:GetHeight() == 432)
+    assert(general:GetHeight() == 480)
 
     ns.SetAdvanced("roleplay", false)
     assert(next(rp.events) == nil and not rp.scripts.OnUpdate)
@@ -2060,12 +2064,13 @@ do
     -- New preferences are included in profile exports, including the 50% range.
     local originalName = ns.Profiles.Current()
     local export = ns.Profiles.Export()
-    assert(export:find("RETCINEMA_PROFILE:11|", 1, true) == 1 and export:find("letterboxHeight=50", 1, true))
+    assert(export:find("RETCINEMA_PROFILE:12|", 1, true) == 1 and export:find("letterboxHeight=50", 1, true))
     local ok, imported = ns.Profiles.Import(export)
     assert(ok and ns.db.advanced.letterboxFull and ns.db.letterboxHeight == 50 and ns.db.extraCombinedLenses[3].fov == 65)
     assert(ns.Profiles.Activate(originalName) and ns.Profiles.Delete(imported))
     assert(not export:find("roleplayDo=", 1, true) and not export:find("roleplayStay=", 1, true) and export:find("roleplayLogoutTarget=4", 1, true))
-    local legacy10 = export:gsub(";advanced%.rp%a+=[^;]+", ""):gsub(";[%w_.]*[Cc]ustom%u%w+Duration=[^;]+", "")
+    local legacy11 = export:gsub("PROFILE:12", "PROFILE:11"):gsub(";globalPreset=[^;]+", "")
+    local legacy10 = legacy11:gsub(";advanced%.rp%a+=[^;]+", ""):gsub(";[%w_.]*[Cc]ustom%u%w+Duration=[^;]+", "")
     local old10, old10Name = ns.Profiles.Import((legacy10:gsub("PROFILE:11", "PROFILE:10")))
     assert(old10 and ns.Advanced("rpWalk") == ns.db.triggerEnabled and ns.Advanced("rpSit") == ns.db.roleplaySit)
     assert(ns.Profiles.Activate(originalName) and ns.Profiles.Delete(old10Name))
@@ -2311,6 +2316,116 @@ do
 end
 print("PASS: navigation state colors, one-line LiteRP spacing, new defaults, conditional reset buttons, unique/empty Escape Lens, modal priority, equal CVar timing and native logout countdown visibility")
 
+do
+    local function settle() for _ = 1, 8 do finishEffects() end end
+    local original = ns.Profiles.Current()
+    assert(ns.Profiles.Create("Preset test 1.1.14"))
+    for _, action in ipairs(ns.actions) do ns.SetEffectEnabled(action.effect, true); ns.SetApplyToLens(action.effect, true) end
+    ns.SetAdvanced(nil, true); ns.SetAdvanced("cameraSpeed", true); ns.SetAdvanced("fovSpeed", true)
+    ns.SetCameraOffset(4.5)
+    Settings.OpenToCategory(ns.settingsCategories.main:GetID())
+    local preset = find(function(f) return f.frameRole == "globalPreset" end)
+    assert(preset:GetText() == "Default" and ns.GetPresetName() == "Default")
+    click(preset); click(find(function(f) return f.parent == preset.menu and f.value == "ret_like" end))
+    assert(ns.GetPresetName() == "ret_like" and ns.db.cameraOffset == 4.5 and ns.db.cameraDuration == 0.5, "Changing the reference preset must retain existing preferences")
+    assert(ns.EffectSettings("camerashift").duration == 0.42 and ns.EffectSettings("camerashift", true).duration == 0.42 and ns.EffectSettings("letterbox").duration == 0.5)
+    assert(not ns.SetGlobalPreset("unknown") and ns.GetPresetName() == "ret_like")
+
+    local minimap = checkbox(general, "Show minimap icon")
+    minimap:SetChecked(false); click(minimap)
+    assert(minimap.reset:IsShown() and not RetCinemaMinimapButton:IsShown())
+    minimap.scripts.OnEnter(minimap)
+    assert(GameTooltip:GetText():find(ns.FormatText("\n\nret_like: Checked"), 1, true))
+    click(minimap.reset); assert(ns.db.showMinimapButton and RetCinemaMinimapButton:IsShown() and not minimap.reset:IsShown())
+
+    effectTab(3)
+    local custom = find(function(f) return f.parent == page("camerashift").content and f.durationKey == "cameraDuration" and not f.permanentMode end)
+    custom:SetChecked(true); click(custom)
+    local input = RetCinemaLenscameraDurationInput
+    input.scripts.OnEnter(input)
+    assert(GameTooltip:GetText():find(ns.FormatText("\n\nret_like: 0.42"), 1, true))
+    assert(input.parent.slider.valueStep == 0.01 and input.parent.reset:IsShown() and custom.reset:IsShown())
+    input:SetFocus(); input:SetText("0.42"); input.scripts.OnEnterPressed(input)
+    assert(ns.db.cameraDuration == 0.42 and input:GetText() == "0.42", "The first exact edit must survive slider synchronization and focus loss")
+    input:SetFocus(); input:SetText("0,47"); input:ClearFocus()
+    assert(ns.db.cameraDuration == 0.47 and input.parent.reset:IsShown())
+    click(input.parent.reset); assert(ns.db.cameraDuration == 0.42 and not input.parent.reset:IsShown())
+    click(custom.reset); assert(not ns.db.customCameraDuration and not input.parent:IsShown() and not custom.reset:IsShown())
+    effectTab(4)
+    local fovCheck = find(function(f) return f.parent == page("fov").content and f.durationKey == "fovDuration" and not f.permanentMode end)
+    fovCheck:SetChecked(true); click(fovCheck)
+    local fovInput = RetCinemaLensFOVfovDurationInput
+    fovInput:SetText("0.43"); fovInput.scripts.OnEnterPressed(fovInput); assert(ns.db.fovDuration == 0.43)
+
+    assert(ns.AddCombinedLens())
+    ns.SetCombinedAction("RETCINEMA_LETTERBOX", true, 1)
+    ns.SetCombinedAction("RETCINEMA_CAMERA", true, 1); ns.SetCombinedAction("RETCINEMA_CAMERA", true, 2)
+    ns.SetCombinedAction("RETCINEMA_FOV", true, 2)
+    Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
+    local row = binding("RETCINEMA_LETTERBOX", 1).parent
+    assert(row.checks[1].reset:IsShown() and row.checks[1].reset.points.TOP[1] == row.gears[1])
+    click(row.gears[1])
+    local dialog = RetCinemaCombinedSettingsDialog
+    assert(dialog.effectSelector:GetText() == "Letterbox" and dialog.effectSelector.points.TOP[4] > dialog.selector.points.TOP[4])
+    RetCinemaCombinedBarHeightInput:SetFocus(); RetCinemaCombinedBarHeightInput:SetText("7.4")
+    click(dialog.effectSelector); click(find(function(f) return f.parent == dialog.effectSelector.menu and f.value == 3 end))
+    assert(dialog.action.effect == "camerashift" and dialog.index == 1 and ns.db.letterboxHeight == 7.4 and ns.db.cameraOffset == 4.5)
+    click(dialog.selector); click(find(function(f) return f.parent == dialog.selector.menu and f.value == 2 end))
+    local cameraCheck = find(function(f) return f.parent == dialog.extraGroups.camerashift and f.durationKey == "cameraDuration" end)
+    cameraCheck:SetChecked(true); click(cameraCheck)
+    local extraInput = RetCinemaCombinedExtracamerashiftcameraDurationInput
+    extraInput:SetText("0.42"); extraInput.scripts.OnEnterPressed(extraInput)
+    assert(ns.db.extraCombinedLenses[2].cameraDuration == 0.42 and not ns.db.customCameraDuration)
+    click(dialog.effectSelector); click(find(function(f) return f.parent == dialog.effectSelector.menu and f.value == 2 end))
+    assert(dialog.action.effect == "letterbox" and dialog.index == 1, "Changing Effect must choose a member Lens when the previous index does not contain it")
+    ns.CloseCombinedSettings()
+    click(row.checks[1].reset); assert(not ns.GetCombinedActions(1).RETCINEMA_LETTERBOX and not row.checks[1].reset:IsShown())
+
+    local export = ns.Profiles.Export()
+    assert(export:find("RETCINEMA_PROFILE:12|", 1, true) == 1 and export:find("globalPreset=ret_like", 1, true))
+    local imported, name = ns.Profiles.Import(export)
+    assert(imported and ns.GetPresetName() == "ret_like" and ns.db.extraCombinedLenses[2].cameraDuration == 0.42)
+    assert(ns.Profiles.Activate("Preset test 1.1.14") and ns.Profiles.Delete(name))
+    assert(not ns.Profiles.Import(export:gsub("globalPreset=ret_like", "globalPreset=unknown")))
+    local oldExport = export:gsub("PROFILE:12", "PROFILE:11"):gsub(";globalPreset=[^;]+", "")
+    imported, name = ns.Profiles.Import(oldExport)
+    assert(imported and ns.GetPresetName() == "Default" and ns.db.cameraDuration == 0.42, "Old profiles use Default without erasing explicit durations")
+    assert(ns.Profiles.Activate("Preset test 1.1.14") and ns.Profiles.Delete(name))
+
+    ns.SetAdvanced("roleplay", true); ns.SetAdvanced("rpLogout", true)
+    Settings.OpenToCategory(ns.settingsCategories.literp:GetID())
+    local go = checkbox(RetCinemaLiteRPPanel.content, "GoOffline")
+    assert(not go:GetChecked() and go.label.color[1] == 0.5)
+    go:SetChecked(true); click(go); assert(go.label.color[1] == 1 and go.reset:IsShown())
+    ns.SetRoleplayTarget("Logout", 0)
+    local oldParent, oldCluster = Minimap.parent, MinimapCluster
+    MinimapCluster = CreateFrame("Frame", nil, UIParent); Minimap:SetParent(MinimapCluster)
+    MinimapCluster:Show(); Minimap:Show()
+    local pin = CreateFrame("Frame", nil, Minimap); pin:SetIgnoreParentAlpha(true)
+    local popup = StaticPopup_Show("CAMP")
+    RetCinemaRoleplayEvents.scripts.OnEvent(RetCinemaRoleplayEvents, "PLAYER_CAMPING")
+    assert(UIParent:GetAlpha() == 0 and not Minimap:IsShown() and not MinimapCluster:IsShown() and not pin:IsVisible())
+    Minimap:Show(); assert(not Minimap:IsShown(), "Native minimap refreshes cannot expose pins during faded HideUI")
+    assert(popup:IsShown() and popup:GetEffectiveAlpha() == 1)
+    local unrelated = StaticPopup_Show("AN_UNRELATED_WARNING")
+    pressEscape(); settle()
+    assert(not popup:IsShown() and unrelated:IsShown() and Minimap:IsShown() and MinimapCluster:IsShown() and UIParent:GetAlpha() == 1, "Escape must explicitly close the native countdown while preserving unrelated dialogs and restoring minimap visibility")
+    unrelated:Hide()
+    MinimapCluster:Hide()
+    RetCinemaRoleplayEvents.scripts.OnEvent(RetCinemaRoleplayEvents, "PLAYER_QUITING")
+    local quit = StaticPopup_Show("QUIT")
+    pressEscape(); settle()
+    assert(not quit:IsShown() and Minimap:IsShown() and not MinimapCluster:IsShown(), "A minimap cluster hidden before the scene must remain hidden")
+    Minimap:SetParent(oldParent); MinimapCluster = oldCluster
+    go:SetChecked(false); click(go); assert(go.label.color[1] == 0.5 and not go.reset:IsShown())
+    Settings.OpenToCategory(ns.settingsCategories.support:GetID())
+    click(find(function(f) return f.parent == RetCinemaSupportPanel.content and f.text == "Too-Doo" end))
+    assert(find(function(f) return f.parent == RetCinemaWishBoard and f.text == ns.FormatText("Update ret_like preset defaults") end))
+    RetCinemaWishBoard:Hide()
+    assert(ns.Profiles.Activate(original) and ns.Profiles.Delete("Preset test 1.1.14"))
+end
+print("PASS: Global Preset selection, ret_like references, checkbox resets, hundredth precision, cross-Effect CL editing, profile schema 12, GoOffline label/ghost cleanup and minimap pin suppression")
+
 -- Disabled effects stay idle; old profiles and interrupted camera snapshots migrate safely.
 for _, effect in ipairs(ns.effects) do ns.SetEffectEnabled(effect.id, false) end
 assert(next(events.events) == nil and not bars.scripts.OnUpdate and not RetCinemaCameraAnimator.scripts.OnUpdate)
@@ -2349,6 +2464,7 @@ end
 do
     ret_CinemaDB = {
         effects = { hideui = false, letterbox = true, camerashift = true, smoothmotion = false },
+        globalPreset = "ret_like",
         cameraConsent = true, permanentCameraShift = true, permanentCameraOffset = 3,
         permanentLetterbox = true, permanentLetterboxHeight = 4,
         cameraRestore = { test_cameraOverShoulder = "-2", CameraKeepCharacterCentered = "1", CameraReduceUnexpectedMovement = "1" },
@@ -2362,6 +2478,7 @@ do
     assert(loadfile("ret_Cinema/Options.lua"))("ret_CinemaStartup", startup)
     function IsLoggedIn() return false end
     startupEvents.scripts.OnEvent(startupEvents, "ADDON_LOADED", "ret_CinemaStartup")
+    assert(startup.GetPresetName() == "ret_like" and startup.db.cameraDuration == 0.42 and startup.db.permanentCameraDuration == 0.42, "Login must initialize missing values from the saved preset")
     assert(cvars.test_cameraOverShoulder == "-2" and startupEvents.events.PLAYER_LOGIN)
     startupEvents.scripts.OnEvent(startupEvents, "PLAYER_LOGIN")
     assert(cvars.test_cameraOverShoulder == "3" and startup.db.cameraRestore.test_cameraOverShoulder == "-2")

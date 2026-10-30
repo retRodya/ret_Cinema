@@ -10,6 +10,13 @@ ns.roleplayNumbers = {
     { key = "roleplayLogoutRate3", label = "Stage 3 growth per second", default = 4, low = 0, high = 50, suffix = "%" },
 }
 local loaded = false
+local function HideNativeCountdown()
+    if StaticPopup_Hide then StaticPopup_Hide("CAMP"); StaticPopup_Hide("QUIT") end
+end
+function ns.DismissLogoutCountdown()
+    if CancelLogout then CancelLogout() end
+    HideNativeCountdown()
+end
 local function LoadRuntime()
     if loaded then return end
     loaded = true
@@ -207,7 +214,7 @@ local function LoadRuntime()
             for _, event in ipairs({ "PLAYER_CAMPING", "PLAYER_QUITING", "LOGOUT_CANCEL" }) do frame:RegisterEvent(event) end
         else StopLogout() end
         if logout and not cancelHooked and type(CancelLogout) == "function" and hooksecurefunc then
-            hooksecurefunc("CancelLogout", function() if logoutElapsed ~= nil then StopLogout() end end)
+            hooksecurefunc("CancelLogout", function() if logoutElapsed ~= nil then StopLogout(); HideNativeCountdown() end end)
             cancelHooked = true
         end
         if logout and not popupHooked and type(StaticPopup_Show) == "function" and hooksecurefunc then

@@ -30,6 +30,39 @@ for index = 2, 5 do _G["BINDING_NAME_RETCINEMA_COMBINED" .. index] = "Combined L
 
 ns.icon = 136034
 ns.defaults = { letterboxHeight = 5, cameraOffset = 1, animationDuration = 0.5 }
+ns.presets = {
+    { name = "Default", values = {} },
+    { name = "ret_like", values = { cameraDuration = 0.42, permanentCameraDuration = 0.42 } },
+}
+function ns.GetPresetName(settings)
+    local name = (settings or ns.db or {}).globalPreset
+    for _, preset in ipairs(ns.presets) do if preset.name == name then return name end end
+    return "Default"
+end
+function ns.PresetDefault(key, fallback, settings)
+    local name = ns.GetPresetName(settings)
+    key = tostring(key or "")
+    local canonical = key:gsub("^extraCombinedLenses%.[2-5]%.", "")
+    for _, preset in ipairs(ns.presets) do
+        if preset.name == name then
+            local value = preset.values[key]
+            if value == nil then value = preset.values[canonical] end
+            if value ~= nil then return value end
+        end
+    end
+    local value = ns.presets[1].values[key]
+    if value == nil then value = ns.presets[1].values[canonical] end
+    if value ~= nil then return value end
+    return fallback
+end
+function ns.SetGlobalPreset(name)
+    local valid
+    for _, preset in ipairs(ns.presets) do if preset.name == name then valid = true; break end end
+    if not valid then return false end
+    ns.db.globalPreset = name
+    if ns.RefreshEffectSettings then ns.RefreshEffectSettings() end
+    return true
+end
 function ns.GetDescription()
     local getter = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
     return getter and getter(addonName, "Notes") or ""
@@ -146,19 +179,23 @@ function ns.EffectSettings(effect, permanent, index)
         if value == nil then value = fallback end
         return value
     end
+    local function duration(key)
+        local field = permanent and "permanent" .. key:sub(1, 1):upper() .. key:sub(2) or key
+        return ns.PresetDefault(field, ns.defaults.animationDuration)
+    end
     if effect == "hideui" then return {
         hideInterface = not ns.Advanced("hideInterface") or read("hideInterface", true),
         hideNames = not ns.Advanced("hideNames") or read("hideNames", true),
     } end
     if effect == "letterbox" then return {
         opacity = ns.Advanced("letterboxOpacity") and read("letterboxOpacity", 1) or 1,
-        duration = ns.Advanced("letterboxSpeed") and read("customLetterboxDuration", false) and read("letterboxDuration", ns.defaults.animationDuration) or ns.defaults.animationDuration,
+        duration = ns.Advanced("letterboxSpeed") and read("customLetterboxDuration", false) and read("letterboxDuration", duration("letterboxDuration")) or duration("letterboxDuration"),
     } end
     if effect == "fov" then return {
-        duration = ns.Advanced("fovSpeed") and read("customFovDuration", false) and read("fovDuration", ns.defaults.animationDuration) or ns.defaults.animationDuration,
+        duration = ns.Advanced("fovSpeed") and read("customFovDuration", false) and read("fovDuration", duration("fovDuration")) or duration("fovDuration"),
     } end
     if effect == "camerashift" then return {
-        duration = ns.Advanced("cameraSpeed") and read("customCameraDuration", false) and read("cameraDuration", ns.defaults.animationDuration) or ns.defaults.animationDuration,
+        duration = ns.Advanced("cameraSpeed") and read("customCameraDuration", false) and read("cameraDuration", duration("cameraDuration")) or duration("cameraDuration"),
         headMovement = ns.Advanced("cameraHeadMovement") and read("cameraHeadMovement", false) or false,
         targetFocus = ns.Advanced("cameraTargetFocus") and read("cameraTargetFocus", false) or false,
     } end
@@ -175,6 +212,27 @@ local uiHidden, visibilityHooked = false, false
 local cameraShiftActive = false
 local uiRestoreShown, uiRestoreAlpha = true, nil
 local interfaceSuppressed = false
+local hiddenMinimap = {}
+local function SuppressMinimap()
+    for _, name in ipairs({ "MinimapCluster", "Minimap" }) do
+        local frame = _G[name]
+        if frame then
+            if hiddenMinimap[frame] == nil then hiddenMinimap[frame] = frame:IsShown() end
+            if not frame.retCinemaHideHook then
+                frame.retCinemaHideHook = true
+                frame:HookScript("OnShow", function(self)
+                    if interfaceSuppressed and uiRestoreAlpha ~= nil then self:Hide() end
+                end)
+            end
+            frame:Hide()
+        end
+    end
+end
+local function RestoreMinimap()
+    local original = hiddenMinimap
+    hiddenMinimap = {}
+    for frame, shown in pairs(original) do frame:SetShown(shown) end
+end
 local cameraAnimator, fovAnimator, escapeHandler
 local combinedStates = {}
 local cameraLensRestore, cameraReturnValues, pendingStartup
@@ -206,7 +264,7 @@ function ns.UpdateEscapeHandler()
             if consume then
                 local logout = ns.IsRoleplayLogoutActive and ns.IsRoleplayLogoutActive()
                 ns.RestoreAll()
-                if logout and CancelLogout then CancelLogout() end
+                if logout and ns.DismissLogoutCountdown then ns.DismissLogoutCountdown() end
                 self:SetPropagateKeyboardInput(false)
             end
         end)
@@ -283,7 +341,7 @@ local function UpdateLetterboxVisibility(immediate, returnDuration)
     if target > 0 then CreateBars(); SyncScreen() end
     if not bars then return end
     local options = letterboxShown and (ns.runtimeSettings.letterbox or ns.EffectSettings("letterbox")) or ns.EffectSettings("letterbox", ns.db.permanentLetterbox)
-    if not letterboxShown and not ns.db.permanentLetterbox then options = { opacity = 1, duration = ns.defaults.animationDuration } end
+    if not letterboxShown and not ns.db.permanentLetterbox then options = { opacity = 1, duration = ns.PresetDefault("letterboxDuration", ns.defaults.animationDuration) } end
     bars:SetAlpha(ns.logoutBarHeight and 1 or options.opacity)
     bars:SetScript("OnUpdate", nil)
     animationTarget = nil
@@ -598,6 +656,7 @@ function ns.RestoreUI()
     operationDepth = operationDepth + 1
     local restoreVisibility, shown = interfaceSuppressed, uiRestoreShown
     interfaceSuppressed = false
+    RestoreMinimap()
     RestoreNames()
     if restoreVisibility then
         if uiRestoreAlpha ~= nil then
@@ -614,6 +673,7 @@ function ns.PrepareLogoutUI()
     -- inherited alpha, without reparenting it or firing its cancellation hooks.
     operationDepth = operationDepth + 1
     uiRestoreAlpha = UIParent:GetAlpha()
+    SuppressMinimap()
     UIParent:SetAlpha(0); UIParent:Show()
     operationDepth = operationDepth - 1
 end
@@ -656,6 +716,7 @@ function RetCinema_ToggleUI()
             -- Hiding UIParent fires native popup OnHide callbacks, which cancel
             -- logout. Fade the interface instead while this countdown owns it.
             uiRestoreAlpha = UIParent:GetAlpha()
+            SuppressMinimap()
             UIParent:SetAlpha(0)
         elseif SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end
     end
@@ -1242,10 +1303,11 @@ events:SetScript("OnEvent", function(self, event, name)
         ret_CinemaDB = type(ret_CinemaDB) == "table" and ret_CinemaDB or {}
         ns.db = ret_CinemaDB
         if type(ns.db.showMinimapButton) ~= "boolean" then ns.db.showMinimapButton = true end
+        ns.db.globalPreset = ns.GetPresetName(ns.db)
         ns.db.minimapAngle = tonumber(ns.db.minimapAngle) or 220
-        ns.db.letterboxHeight = NumberInRange(ns.db.letterboxHeight, 0, 50) or ns.defaults.letterboxHeight
+        ns.db.letterboxHeight = NumberInRange(ns.db.letterboxHeight, 0, 50) or ns.PresetDefault("letterboxHeight", ns.defaults.letterboxHeight)
         ns.db.permanentLetterboxHeight = NumberInRange(ns.db.permanentLetterboxHeight, 0, 50) or 10
-        ns.db.cameraOffset = NumberInRange(ns.db.cameraOffset, -15, 15) or ns.defaults.cameraOffset
+        ns.db.cameraOffset = NumberInRange(ns.db.cameraOffset, -15, 15) or ns.PresetDefault("cameraOffset", ns.defaults.cameraOffset)
         ns.db.permanentCameraOffset = NumberInRange(ns.db.permanentCameraOffset, -15, 15) or 1.5
         ns.db.permanentLetterbox = ns.db.permanentLetterbox == true
         ns.db.permanentCameraShift = ns.db.permanentCameraShift == true
@@ -1315,7 +1377,7 @@ events:SetScript("OnEvent", function(self, event, name)
         ns.NormalizeEscapeLens(ns.db)
         local sources = { ns.db }
         for index = 2, 5 do sources[#sources + 1] = ns.db.extraCombinedLenses[index] end
-        for _, source in ipairs(sources) do
+        for ordinal, source in ipairs(sources) do
             for _, spec in ipairs(ns.settingSpecs) do
                 if spec.duration then
                     for _, prefix in ipairs(source == ns.db and { "", "permanent" } or { "" }) do
@@ -1331,9 +1393,10 @@ events:SetScript("OnEvent", function(self, event, name)
                 for _, prefix in ipairs(source == ns.db and spec.effect ~= "hideui" and { "", "permanent" } or { "" }) do
                     local key = prefix ~= "" and prefix .. spec.key:sub(1, 1):upper() .. spec.key:sub(2) or spec.key
                     local value = source[key]
+                    local path = ordinal == 1 and key or "extraCombinedLenses." .. ordinal .. "." .. key
                     if type(spec.default) == "boolean" then
-                        if type(value) ~= "boolean" then value = spec.default end
-                    elseif type(value) ~= "number" or value ~= value or value < spec.low or value > spec.high then value = spec.default end
+                        if type(value) ~= "boolean" then value = ns.PresetDefault(path, spec.default) end
+                    elseif type(value) ~= "number" or value ~= value or value < spec.low or value > spec.high then value = ns.PresetDefault(path, spec.default) end
                     source[key] = value
                 end
             end

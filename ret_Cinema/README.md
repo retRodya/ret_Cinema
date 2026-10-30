@@ -68,6 +68,16 @@ per row. A Lens row requires both the main-page enable switch and the Effect's o
 The main-page hint is: "Turn on the Permanent Effect as well as applying this
 Effect to your Lens." Permanent and Lens settings are independent.
 
+**Global Preset:** selects **Default** or **ret_like** as the reference for
+settings hints and reset buttons. Changing this selector preserves existing
+preferences. ret_like currently inherits Default, except that CameraShift animation
+duration defaults to **0.42 seconds** for Permanent, ordinary Lens and Combined Lens
+settings. The selector is saved per profile and included in exports. With custom
+duration disabled, the selected preset provides the standard animation duration.
+The preset values are defined in `ns.presets` in `Core.lua`; Default's base values
+are registered from the profile schema. Too-Doo includes **Update ret_like preset
+defaults** for the remaining author-specific values.
+
 The addon starts in Simple mode: opaque bars up to 25%, standard animation
 durations, one key slot and capacity for up to three Combined Lenses (starting with one).
 **Advanced Cinematographer** appears
@@ -202,11 +212,15 @@ snapshot, then reapplies the saved permanent preference. Zooming and combat do n
 cancel Lens Effects.
 
 For both numeric controls, Enter or leaving the field commits an edit, and Esc
-cancels it. Option tooltips end with a separate **Default:** line (Checked or Unchecked).
-Every default hint appears at the end of its tooltip, after one blank line,
-for example **Default: 0.5**. Reset buttons appear only when their value differs
-from the default, and disappear immediately after a successful reset.
-An undo-arrow button beside every precise numeric input restores its default.
+cancels it. Option tooltips end with a separate preset reference line, such as
+**Default: Checked** or **ret_like: Unchecked**.
+Every preset hint appears at the end of its tooltip, after one blank line,
+for example **Default: 0.5** or **ret_like: 0.42**. Numeric controls and interactive
+checkboxes show an undo-arrow button only while their value differs from the
+selected preset. Checkbox resets invoke the same action as a normal checkbox click.
+Membership checkbox resets appear below the associated gear, alongside the Lens number.
+Animation-duration sliders use 0.01-second steps. An exact input is synchronized
+with its slider without allowing a programmatic slider callback to overwrite it.
 Decimal commas and dots are accepted. Out-of-range values are clamped;
 invalid values leave the current setting unchanged. Unsupported clients disable
 camera controls and show a message.
@@ -277,10 +291,13 @@ Dividers separate the configurations inside the same
 container. Fresh slots start with no Effects selected; re-shown slots retain theirs.
 
 Every membership checkbox has a gear button, including Combined Lens 1.
-It opens that specific Lens's Effect settings window with a
+It opens that specific Lens's Effect settings window with an Effect selector above a
 centered selector listing only the checked lenses for that Effect, including CL1,
 with a current/total page counter and previous/next arrows. The arrows wrap over
-only the selected lenses. Letterbox, CameraShift and FOV have independent
+only the selected lenses. The Effect selector lists enabled Effects with editable
+Combined Lens settings. Switching Effect keeps the current Lens if it contains
+that Effect; otherwise it selects the first participating Lens. Pending exact-value
+edits are committed to the old Effect/Lens before switching. Letterbox, CameraShift and FOV have independent
 values and enabled advanced controls. HideUI has its exposed Advanced switches.
 There is no Apply checkbox or Use Effect settings switch in these dialogs;
 membership is managed by the table. Changes apply
@@ -335,7 +352,8 @@ Bindings remain in the game's current account/character binding set.
 
 ### Animation timing
 
-All three Effect duration defaults are **0.5 seconds**. Saved custom values remain
+Default uses **0.5 seconds** for all three Effect durations; ret_like uses
+**0.42 seconds** for CameraShift and **0.5 seconds** for Letterbox and FOV. Saved custom values remain
 unchanged. CameraShift and FOV use the same smoothstep curve and reach their CVar
 targets at the configured time; the local behavior test verifies both at 0.25 and
 0.5 seconds. These CVar values do not measure the camera's rendered position.
@@ -407,7 +425,9 @@ scene or resumes the underlying Walk/Stay action. While GoOffline hides UI, it
 uses alpha instead of hiding UIParent, preserving native logout-popup behavior
 and restoring the exact original alpha afterward. The native CAMP/QUIT popup
 ignores parent alpha during GoOffline, so its countdown and native cancellation
-controls stay visible even with HideUI. This also works if HideUI was active before
+controls stay visible even with HideUI. During this fade, Minimap and
+MinimapCluster are hidden with their previous visibility saved, preventing native
+pins or icons that ignore parent alpha from leaking through. This also works if HideUI was active before
 logout. The popup's original alpha behavior is restored on cancellation or shutdown.
 Every field has a default tooltip; its undo button appears only for non-default values. Defaults add 2 percentage points per second for 10 seconds, then
 3 for 6 seconds, then 4 for 3 seconds, capped at 50% per bar. Existing bars can
@@ -417,8 +437,10 @@ Canceling the native logout/quit countdown stops GoOffline growth immediately
 and restores the previous bars in **0.15 seconds**, regardless of a longer saved
 Letterbox duration. The native `CancelLogout` call is observed with a secure
 post-hook, alongside `LOGOUT_CANCEL`. Only an explicit physical Esc exit from an
-active GoOffline scene calls `CancelLogout`; ordinary Lens keys do not cancel the
-native countdown. Opening
+active GoOffline scene calls `CancelLogout` and explicitly closes native
+CAMP/QUIT popups. External cancellation during GoOffline also closes those popups,
+preventing a countdown window from remaining after the timer has ended. Unrelated
+popups are preserved. Ordinary Lens keys do not cancel the native countdown. Opening
 the game menu alone does not start the preset, and immediate logout has no countdown.
 
 LiteRP is the child category; Walk, Stay and GoOffline are its actions.
@@ -447,8 +469,8 @@ Effects are then applied. Recovery snapshots and experimental-camera consent are
 account-wide and excluded from copies and exports. WoW key assignments remain in
 the game's current binding set and are not changed by profile operations.
 
-Exports use `RETCINEMA_PROFILE:11|...`, including Advanced options, individual Stay
-targets, GoOffline stages, optional-action visibility, custom-duration enable
+Exports use `RETCINEMA_PROFILE:12|...`, including Advanced options, individual Stay
+targets, GoOffline stages, Global Preset selection, optional-action visibility, custom-duration enable
 states, FOV, camera options and independent Combined Lens values. Old profiles
 keep configured RP actions visible and retain previously customized durations.
 Versions 1–9 remain supported; version 1 imports with one

@@ -20,6 +20,7 @@ local fields = {
     { "roleplayLean", false, nil, nil, 6 }, { "roleplayLogout", false, nil, nil, 6 },
 }
 fields[#fields + 1] = { "globalPreset", "Default", nil, nil, 12 }
+fields[#fields + 1] = { "roleplayLogoutAllowLensButtons", false, nil, nil, 13 }
 fields[#fields + 1] = { "roleplayLogoutTarget", -1, -1, 8, 10, true }
 for _, kind in ipairs({ "Sit", "Lay", "Lean" }) do fields[#fields + 1] = { "roleplay" .. kind .. "Target", 0, 0, 8, 7, true } end
 for _, spec in ipairs(ns.roleplayNumbers) do fields[#fields + 1] = { spec.key, spec.default, spec.low, spec.high, 7 } end
@@ -89,7 +90,7 @@ local function Snapshot(source)
     local result = {}
     source = source or {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 12) then
+        if InVersion(field, 14) then
             local value = Read(source, field[1])
             if value == nil then
                 for _, option in ipairs(ns.advancedOptions) do
@@ -223,14 +224,14 @@ function Profiles.Export()
     Profiles.Save()
     local values = {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 12) then
+        if InVersion(field, 14) then
             local value = Read(ns.db.profiles[ns.db.activeProfile], field[1])
             if type(value) == "boolean" then value = value and "true" or "false"
             elseif type(value) == "number" then value = string.format("%.17g", value) end
             values[#values + 1] = field[1] .. "=" .. value
         end
     end
-    return "RETCINEMA_PROFILE:12|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
+    return "RETCINEMA_PROFILE:14|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
 end
 function Profiles.Import(text)
     local ok, errorText = CanChange()
@@ -239,7 +240,7 @@ function Profiles.Import(text)
     text = text:match("^%s*(.-)%s*$")
     local version, encodedName, payload = text:match("^RETCINEMA_PROFILE:(%d+)|([^|]+)|([^|]+)$")
     version = tonumber(version)
-    if not version or version < 1 or version > 12 then return false, "Unsupported or invalid profile export." end
+    if not version or version < 1 or version > 14 then return false, "Unsupported or invalid profile export." end
     local name = Name(Decode(encodedName))
     if not name then return false, "Invalid profile name in export." end
     local settings, seen, count = {}, {}, 0

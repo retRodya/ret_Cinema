@@ -55,6 +55,9 @@ local function LoadRuntime()
     function ns.IsRoleplayActive() return snapshot ~= nil or logoutElapsed ~= nil end
     function ns.IsRoleplayLogoutActive() return logoutElapsed ~= nil end
     function ns.IsRoleplayEffectOwned(effect)
+        -- GoOffline retains its animation override, but may optionally let Lens
+        -- buttons change the underlying scene. Walk and Stay remain protected.
+        if logoutElapsed ~= nil and ns.LogoutLensButtonsAvailable() and ns.db.roleplayLogoutAllowLensButtons then return false end
         if logoutElapsed ~= nil and effect == "letterbox" then return true end
         if not snapshot or activeTarget == nil then return false end
         if activeTarget <= 2 or activeTarget == 8 then return Action(activeTarget).effect == effect end
@@ -261,6 +264,12 @@ local function LoadRuntime()
         return true
     end
     function ns.SetRoleplayOption(key, value)
+        if key == "roleplayLogoutAllowLensButtons" then
+            if not ns.LogoutLensButtonsAvailable() then return false end
+            ns.db[key] = value == true
+            Notify()
+            return true
+        end
         if key ~= "roleplaySit" and key ~= "roleplayLay" and key ~= "roleplayLean" and key ~= "roleplayLogout" then return false end
         if value and not ns.RoleplayActionVisible(key:sub(9)) then return false end
         ns.db[key] = value == true

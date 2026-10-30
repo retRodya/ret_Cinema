@@ -1,7 +1,8 @@
 local addonName, ns = ...
 
 ns.retColor = "|cff9acd32"
-local chatFallbacks = { RAID_LEADER = { r = 1, g = 0.28, b = 0.04 }, SYSTEM = { r = 1, g = 1, b = 0 }, EMOTE = { r = 1, g = 0.5, b = 0.25 } }
+ns.liteRPColor, ns.experimentalColor = "|cffFF8040", "|cffFF4809"
+local chatFallbacks = { SYSTEM = { r = 1, g = 1, b = 0 } }
 function ns.ChatColor(kind)
     local color = ChatTypeInfo and ChatTypeInfo[kind] or chatFallbacks[kind]
     return color.r, color.g, color.b
@@ -17,7 +18,9 @@ function ns.ColorRet(text)
 end
 function ns.FormatText(text)
     text = ns.ColorRet(text):gsub("|c%x%x%x%x%x%x%x%xLiteRP|r", "LiteRP")
-    return (text:gsub("LiteRP", ns.ChatText("EMOTE", "LiteRP")))
+    text = text:gsub("|c%x%x%x%x%x%x%x%xExperimental|r", "Experimental")
+    text = text:gsub("LiteRP", ns.liteRPColor .. "LiteRP|r")
+    return (text:gsub("Experimental", ns.experimentalColor .. "Experimental|r"))
 end
 ns.title = ns.ColorRet("ret_|cff40c7ebCinema|r")
 BINDING_HEADER_RETCINEMA = ns.title
@@ -89,8 +92,9 @@ ns.actions = {
 }
 
 ns.advancedOptions = {
-    { id = "hideInterface", group = "HideUI", name = "Hide interface elements" },
-    { id = "hideNames", group = "HideUI", name = "Hide creature names" },
+    { id = "hideInterface", group = "HideUI", name = "Don't hide interface elements" },
+    { id = "hideNames", group = "HideUI", name = "Don't hide creature names" },
+    { id = "hideuiDuration", group = "HideUI", name = "Custom HideUI animation duration", version = 14 },
     { id = "letterboxOpacity", group = "Letterbox", name = "Custom Letterbox transparency" },
     { id = "letterboxSpeed", group = "Letterbox", name = "Custom Letterbox animation duration" },
     { id = "letterboxFull", group = "Letterbox", name = "Allow bar height up to 50%" },
@@ -100,6 +104,7 @@ ns.advancedOptions = {
     { id = "fovSpeed", group = "FOV", name = "Custom FOV animation duration", version = 8 },
     { id = "secondButton", group = "Lens", name = "Additional keybind button" },
     { id = "moreCombined", group = "Lens", name = "Combined Lenses up to 5" },
+    { id = "multipleEscapeButtons", group = "Lens", name = "Allow more than 1 Escape Button", version = 14 },
     { id = "roleplay", group = "LiteRP", name = "LiteRP", experimental = true },
 }
 ns.roleplayActions = {
@@ -111,6 +116,10 @@ ns.roleplayActions = {
 }
 for _, action in ipairs(ns.roleplayActions) do
     ns.advancedOptions[#ns.advancedOptions + 1] = { id = action.id, group = "LiteRP", name = action.name or action.kind, version = 11, actionKey = action.key }
+end
+ns.advancedOptions[#ns.advancedOptions + 1] = { id = "logoutLensButtons", group = "LiteRP", name = "Allow Lens buttons", version = 13 }
+function ns.LogoutLensButtonsAvailable()
+    return ns.RoleplayActionVisible("Logout") and ns.Advanced("logoutLensButtons")
 end
 function ns.Advanced(id)
     return ns.db and ns.db.advancedCinematographer and ns.db.advanced and ns.db.advanced[id] == true
@@ -127,6 +136,7 @@ ns.runtimeSettings = {}
 ns.settingSpecs = {
     { effect = "hideui", key = "hideInterface", label = "Hide interface elements", default = true, advanced = "hideInterface" },
     { effect = "hideui", key = "hideNames", label = "Hide creature names", default = true, advanced = "hideNames" },
+    { effect = "hideui", key = "hideuiDuration", label = "Animation duration (seconds)", default = ns.defaults.animationDuration, low = 0.1, high = 5, advanced = "hideuiDuration", version = 14 },
     { effect = "letterbox", key = "letterboxOpacity", label = "Bar opacity", default = 1, low = 0, high = 1, advanced = "letterboxOpacity" },
     { effect = "letterbox", key = "letterboxDuration", label = "Animation duration (seconds)", default = ns.defaults.animationDuration, low = 0.1, high = 5, advanced = "letterboxSpeed" },
     { effect = "fov", key = "fovDuration", label = "Animation duration (seconds)", default = ns.defaults.animationDuration, low = 0.1, high = 5, advanced = "fovSpeed", version = 8 },
@@ -137,12 +147,13 @@ ns.settingSpecs = {
 }
 -- Visibility permissions and the actual custom-duration settings are separate.
 for _, spec in ipairs({
+    { effect = "hideui", key = "customHideUIDuration", advanced = "hideuiDuration", duration = "hideuiDuration", version = 14 },
     { effect = "letterbox", key = "customLetterboxDuration", advanced = "letterboxSpeed", duration = "letterboxDuration" },
     { effect = "camerashift", key = "customCameraDuration", advanced = "cameraSpeed", duration = "cameraDuration" },
     { effect = "fov", key = "customFovDuration", advanced = "fovSpeed", duration = "fovDuration" },
 }) do
     for _, option in ipairs(ns.advancedOptions) do if option.id == spec.advanced then spec.label = option.name end end
-    spec.default, spec.version = false, 11
+    spec.default, spec.version = false, spec.version or 11
     ns.settingSpecs[#ns.settingSpecs + 1] = spec
 end
 function ns.SetEffectSetting(key, value, permanent, index)
@@ -186,6 +197,7 @@ function ns.EffectSettings(effect, permanent, index)
     if effect == "hideui" then return {
         hideInterface = not ns.Advanced("hideInterface") or read("hideInterface", true),
         hideNames = not ns.Advanced("hideNames") or read("hideNames", true),
+        duration = ns.Advanced("hideuiDuration") and read("customHideUIDuration", false) and read("hideuiDuration", duration("hideuiDuration")) or duration("hideuiDuration"),
     } end
     if effect == "letterbox" then return {
         opacity = ns.Advanced("letterboxOpacity") and read("letterboxOpacity", 1) or 1,
@@ -235,13 +247,18 @@ local function RestoreMinimap()
 end
 local cameraAnimator, fovAnimator, escapeHandler
 local combinedStates = {}
+local effectOwners = {}
 local cameraLensRestore, cameraReturnValues, pendingStartup
 local cameraLastDuration, cameraReturnDuration
 local operationDepth, restoringAll, exitingAll = 0, false, false
 local SyncScreen, CreateBars, UpdateBars
 local SetActionState
+function ns.LensButtonsBlocked()
+    return ns.IsRoleplayLogoutActive and ns.IsRoleplayLogoutActive() and
+        not (ns.LogoutLensButtonsAvailable() and ns.db.roleplayLogoutAllowLensButtons)
+end
 local function RoleplayOwns(effect)
-    return ns.IsRoleplayEffectOwned and ns.IsRoleplayEffectOwned(effect)
+    return ns.LensButtonsBlocked() or (ns.IsRoleplayEffectOwned and ns.IsRoleplayEffectOwned(effect))
 end
 
 function ns.UpdateEscapeHandler()
@@ -296,7 +313,7 @@ local function UpdateEvents()
         events:RegisterEvent("UI_SCALE_CHANGED")
         events:RegisterEvent("DISPLAY_SIZE_CHANGED")
     end
-    if ns.db and (ns.db.hiddenCVars or ns.db.cameraRestore or ns.db.fovRestore) then events:RegisterEvent("PLAYER_LOGOUT") end
+    if ns.db and (ns.db.hiddenCVars or ns.db.cameraRestore or ns.db.fovRestore or uiRestoreAlpha ~= nil) then events:RegisterEvent("PLAYER_LOGOUT") end
     ns.UpdateEscapeHandler()
 end
 
@@ -477,7 +494,7 @@ function ns.GetCombinedExitAll(index)
 end
 function ns.SetCombinedExitAll(index, enabled)
     if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > ns.GetCombinedCount() then return false end
-    if enabled then
+    if enabled and not ns.Advanced("multipleEscapeButtons") then
         ns.db.combinedAsEsc = false
         for _, lens in pairs(ns.db.extraCombinedLenses) do lens.exitAll = false end
     end
@@ -490,6 +507,7 @@ function ns.GetEscapeLens()
     for index = 1, ns.GetCombinedCount() do if ns.GetCombinedExitAll(index) then return index end end
 end
 function ns.NormalizeEscapeLens(settings)
+    if settings.advancedCinematographer and settings.advanced and settings.advanced.multipleEscapeButtons then return end
     local found = settings.combinedAsEsc == true
     for index = 2, 5 do
         local lens = settings.extraCombinedLenses[index]
@@ -534,25 +552,51 @@ local function IsActionActive(action)
     if action.effect == "camerashift" then return ns.IsCameraShiftActive() end
     return ns.fovActive == true
 end
-local function RestoreCombined(index)
+local function DetachCombined(index)
     local previous = combinedStates[index]
     combinedStates[index] = nil
     if not previous then return end
     for _, saved in ipairs(previous) do
-        local shared
-        if saved.action.effect == "hideui" then
-            for _, other in pairs(combinedStates) do
-                for _, owner in ipairs(other) do
-                    if owner.action.effect == "hideui" then
-                        shared = true
-                        -- Carry the original baseline to the remaining owner.
-                        if not saved.active then owner.active, owner.value, owner.options = false, saved.value, saved.options end
-                    end
+        -- Removing a lower Lens must also remove it from the return chain.
+        -- Otherwise reapplying it would leave two snapshots pointing at each other.
+        for _, other in pairs(combinedStates) do
+            for _, entry in ipairs(other) do
+                if entry.action == saved.action and entry.owner == index then
+                    entry.active, entry.value, entry.options, entry.owner = saved.active, saved.value, saved.options, saved.owner
                 end
             end
         end
-        if not shared and ns.IsActionEnabled(saved.action) and not RoleplayOwns(saved.action.effect) then SetActionState(saved.action, saved.active, saved.value, saved.options) end
     end
+    return previous
+end
+local function RestoreCombined(index)
+    for _, saved in ipairs(DetachCombined(index) or {}) do
+        if effectOwners[saved.action.effect] == index then
+            effectOwners[saved.action.effect] = saved.owner
+            if ns.IsActionEnabled(saved.action) and not RoleplayOwns(saved.action.effect) then
+                SetActionState(saved.action, saved.active, saved.value, saved.options)
+            end
+        end
+    end
+end
+local function CombinedMatchesScene(index, wholeScene)
+    for _, action in ipairs(ns.actions) do
+        local wanted = ns.IsActionEnabled(action) and ns.GetCombinedActions(index)[action.binding] == true
+        if wanted or wholeScene then
+            if IsActionActive(action) ~= wanted then return false end
+            if wanted then
+                local current = action.effect == "letterbox" and (letterboxLensHeight or ns.db.letterboxHeight) or
+                    action.effect == "camerashift" and (cameraLensOffset or ns.db.cameraOffset) or
+                    action.effect == "fov" and (ns.fovLensValue or ns.db.fov)
+                if current and current ~= ns.GetCombinedEffectValue(index, action.effect) then return false end
+                local actual = ns.runtimeSettings[action.effect] or ns.EffectSettings(action.effect)
+                for key, value in pairs(ns.EffectSettings(action.effect, false, index)) do
+                    if actual[key] ~= value then return false end
+                end
+            end
+        end
+    end
+    return true
 end
 function ns.RemoveCombinedLens()
     local index = ns.GetCombinedCount()
@@ -570,6 +614,7 @@ function ns.RemoveCombinedLens()
     return true
 end
 function RetCinema_ToggleCombined(index)
+    if ns.LensButtonsBlocked() then return end
     index = index or 1
     if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > ns.GetCombinedCount() then return end
     local exitAll = ns.GetCombinedExitAll(index)
@@ -580,31 +625,17 @@ function RetCinema_ToggleCombined(index)
     if combinedStates[index] and exitAll then
         -- A different button can remove the last unrelated effect. Compare the
         -- effective scene, rather than requiring two consecutive key presses.
-        local onlyThisLens = true
-        for _, action in ipairs(ns.actions) do
-            local wanted = ns.IsActionEnabled(action) and ns.GetCombinedActions(index)[action.binding] == true
-            if IsActionActive(action) ~= wanted then onlyThisLens = false; break end
-            if wanted then
-                local current = action.effect == "letterbox" and (letterboxLensHeight or ns.db.letterboxHeight) or
-                    action.effect == "camerashift" and (cameraLensOffset or ns.db.cameraOffset) or
-                    action.effect == "fov" and (ns.fovLensValue or ns.db.fov)
-                if current and current ~= ns.GetCombinedEffectValue(index, action.effect) then onlyThisLens = false; break end
-                local actual = ns.runtimeSettings[action.effect] or ns.EffectSettings(action.effect)
-                for key, value in pairs(ns.EffectSettings(action.effect, false, index)) do
-                    if actual[key] ~= value then onlyThisLens = false; break end
-                end
-            end
-        end
-        if onlyThisLens then ns.RestoreAll(); return end
+        if CombinedMatchesScene(index, true) then ns.RestoreAll(); return end
         ns.RestoreAll()
     end
     if not combinedStates[index] and not ns.HasCombinedActions(index) then return end
     if ns.CancelRoleplay and not ns.IsRoleplayActive() then ns.CancelRoleplay() end
     exitingAll = false
     operationDepth = operationDepth + 1
-    if combinedStates[index] and not exitAll then
+    if combinedStates[index] and not exitAll and CombinedMatchesScene(index, false) then
         RestoreCombined(index)
     else
+        local previous = DetachCombined(index)
         local selected = {}
         for _, action in ipairs(ns.actions) do
             if ns.IsActionEnabled(action) and ns.GetCombinedActions(index)[action.binding] and not RoleplayOwns(action.effect) then
@@ -612,8 +643,16 @@ function RetCinema_ToggleCombined(index)
                 if action.effect == "letterbox" then value = letterboxLensHeight
                 elseif action.effect == "camerashift" then value = cameraLensOffset
                 elseif action.effect == "fov" then value = ns.fovLensValue end
-                selected[#selected + 1] = { action = action, active = IsActionActive(action), value = value,
-                    options = ns.runtimeSettings[action.effect] }
+                local entry = { action = action, active = IsActionActive(action), value = value,
+                    options = ns.runtimeSettings[action.effect], owner = effectOwners[action.effect] }
+                if entry.owner == index then
+                    for _, saved in ipairs(previous or {}) do
+                        if saved.action == action then
+                            entry.active, entry.value, entry.options, entry.owner = saved.active, saved.value, saved.options, saved.owner
+                        end
+                    end
+                end
+                selected[#selected + 1] = entry
             end
         end
         if #selected > 0 then
@@ -621,6 +660,7 @@ function RetCinema_ToggleCombined(index)
             for _, saved in ipairs(selected) do
                 local value = ns.GetCombinedEffectValue(index, saved.action.effect)
                 SetActionState(saved.action, true, value, ns.EffectSettings(saved.action.effect, false, index))
+                effectOwners[saved.action.effect] = index
             end
         end
     end
@@ -651,28 +691,61 @@ local function RestoreNames()
     uiHidden = false
     UpdateEvents()
 end
-function ns.RestoreUI()
+local uiAnimator, uiFadeDuration
+local function StopUIFade()
+    if uiAnimator then uiAnimator:SetScript("OnUpdate", nil); uiAnimator:Hide() end
+end
+local function FadeUI(target, duration, complete)
+    StopUIFade()
+    local start = UIParent:GetAlpha()
+    if duration <= 0 or math.abs(target - start) < 0.0001 then
+        UIParent:SetAlpha(target); if complete then complete() end
+        return
+    end
+    if not uiAnimator then
+        -- Independent of UIParent so the return animation can show a hidden UI.
+        uiAnimator = CreateFrame("Frame", "RetCinemaHideUIAnimator")
+        uiAnimator:SetSize(1, 1); uiAnimator:SetPoint("CENTER", UIParent, "CENTER"); uiAnimator:EnableMouse(false)
+    end
+    local elapsed = 0
+    uiAnimator:SetScript("OnUpdate", function(self, delta)
+        elapsed = math.min(duration, elapsed + delta)
+        local progress = elapsed / duration
+        local eased = progress * progress * (3 - 2 * progress)
+        UIParent:SetAlpha(start + (target - start) * eased)
+        if elapsed >= duration then StopUIFade(); if complete then complete() end end
+    end)
+    uiAnimator:Show()
+end
+function ns.RestoreUI(immediate)
     if not ns.db then return end
     operationDepth = operationDepth + 1
-    local restoreVisibility, shown = interfaceSuppressed, uiRestoreShown
+    local restoreVisibility, shown = interfaceSuppressed or uiRestoreAlpha ~= nil, uiRestoreShown
+    local alpha = uiRestoreAlpha
+    local duration = not immediate and (ns.Advanced("hideuiDuration") and uiFadeDuration or ns.PresetDefault("hideuiDuration", ns.defaults.animationDuration)) or 0
+    StopUIFade()
     interfaceSuppressed = false
     RestoreMinimap()
     RestoreNames()
     if restoreVisibility then
-        if uiRestoreAlpha ~= nil then
-            UIParent:SetAlpha(uiRestoreAlpha); uiRestoreAlpha = nil
-            if not shown then if SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end end
-        elseif SetUIVisibility then SetUIVisibility(shown) else UIParent:SetShown(shown) end
+        if SetUIVisibility then SetUIVisibility(shown) else UIParent:SetShown(shown) end
+        if alpha ~= nil then
+            FadeUI(alpha, shown and (duration or 0) or 0, function()
+                uiRestoreAlpha, uiFadeDuration = nil, nil
+                UpdateEvents()
+            end)
+        end
     end
     operationDepth = operationDepth - 1
     UpdateEvents()
 end
 function ns.PrepareLogoutUI()
-    if not uiHidden or not interfaceSuppressed or uiRestoreAlpha ~= nil then return end
+    if not uiHidden or not interfaceSuppressed then return end
     -- A visible UIParent with alpha zero lets the native countdown opt out of
     -- inherited alpha, without reparenting it or firing its cancellation hooks.
     operationDepth = operationDepth + 1
-    uiRestoreAlpha = UIParent:GetAlpha()
+    StopUIFade()
+    uiRestoreAlpha = uiRestoreAlpha or UIParent:GetAlpha()
     SuppressMinimap()
     UIParent:SetAlpha(0); UIParent:Show()
     operationDepth = operationDepth - 1
@@ -692,7 +765,13 @@ function RetCinema_ToggleUI()
         UIParent:HookScript("OnShow", function()
             if uiHidden and interfaceSuppressed and operationDepth == 0 then
                 -- Combat and camera controls must not cancel screenshot mode.
-                if uiRestoreAlpha ~= nil then UIParent:SetAlpha(0)
+                if uiRestoreAlpha ~= nil then
+                    if not (uiAnimator and uiAnimator:GetScript("OnUpdate")) then
+                        UIParent:SetAlpha(0)
+                        if not (ns.IsRoleplayLogoutActive and ns.IsRoleplayLogoutActive()) then
+                            if SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end
+                        end
+                    end
                 elseif SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end
             end
         end)
@@ -709,13 +788,23 @@ function RetCinema_ToggleUI()
     end
     uiHidden = true
     interfaceSuppressed = options.hideInterface
+    uiFadeDuration = options.duration or 0
     operationDepth = operationDepth + 1
     UpdateEvents()
     if interfaceSuppressed then
-        if ns.IsRoleplayLogoutActive and ns.IsRoleplayLogoutActive() then
+        if uiFadeDuration > 0 then
+            uiRestoreAlpha = uiRestoreAlpha or UIParent:GetAlpha()
+            FadeUI(0, uiFadeDuration, function()
+                if not uiHidden or not interfaceSuppressed then return end
+                SuppressMinimap()
+                if not (ns.IsRoleplayLogoutActive and ns.IsRoleplayLogoutActive()) then
+                    if SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end
+                end
+            end)
+        elseif ns.IsRoleplayLogoutActive and ns.IsRoleplayLogoutActive() then
             -- Hiding UIParent fires native popup OnHide callbacks, which cancel
             -- logout. Fade the interface instead while this countdown owns it.
-            uiRestoreAlpha = UIParent:GetAlpha()
+            uiRestoreAlpha = uiRestoreAlpha or UIParent:GetAlpha()
             SuppressMinimap()
             UIParent:SetAlpha(0)
         elseif SetUIVisibility then SetUIVisibility(false) else UIParent:Hide() end
@@ -1009,8 +1098,12 @@ SetActionState = function(action, active, value, options)
     if active then exitingAll = false end
     if action.effect == "hideui" and active and uiHidden then
         local before, after = ns.runtimeSettings.hideui or ns.EffectSettings("hideui"), options or ns.EffectSettings("hideui")
-        if before.hideInterface == after.hideInterface and before.hideNames == after.hideNames then return end
-        ns.RestoreUI()
+        if before.hideInterface == after.hideInterface and before.hideNames == after.hideNames then
+            ns.runtimeSettings.hideui = options
+            uiFadeDuration = after.duration or 0
+            return
+        end
+        ns.RestoreUI(true)
     end
     ns.runtimeSettings[action.effect] = options
     if action.effect == "letterbox" then
@@ -1029,11 +1122,13 @@ SetActionState = function(action, active, value, options)
 end
 function ns.CaptureLensState()
     local state = {}
+    state.owners = {}
+    for effect, owner in pairs(effectOwners) do state.owners[effect] = owner end
     state.combined = {}
     for index, entries in pairs(combinedStates) do
         state.combined[index] = {}
         for _, entry in ipairs(entries) do
-            state.combined[index][#state.combined[index] + 1] = { action = entry.action, active = entry.active, value = entry.value, options = entry.options }
+            state.combined[index][#state.combined[index] + 1] = { action = entry.action, active = entry.active, value = entry.value, options = entry.options, owner = entry.owner }
         end
     end
     for _, action in ipairs(ns.actions) do
@@ -1047,10 +1142,12 @@ function ns.RestoreLensState(state)
     operationDepth = operationDepth + 1
     if state and state.combined then
         combinedStates = {}
+        effectOwners = {}
+        for effect, owner in pairs(state.owners or {}) do effectOwners[effect] = owner end
         for index, entries in pairs(state.combined) do
             combinedStates[index] = {}
             for _, entry in ipairs(entries) do combinedStates[index][#combinedStates[index] + 1] = {
-                action = entry.action, active = entry.active, value = entry.value, options = entry.options } end
+                action = entry.action, active = entry.active, value = entry.value, options = entry.options, owner = entry.owner } end
         end
     end
     for _, saved in ipairs(state or {}) do
@@ -1084,6 +1181,7 @@ function ns.SetAdvanced(id, enabled)
         if not known then return false end
         ns.db.advanced[id] = enabled == true
     end
+    ns.NormalizeEscapeLens(ns.db)
     for _, key in ipairs({ "hideInterface", "hideNames" }) do
         if not ns.Advanced(key) then
             ns.db[key] = false
@@ -1105,7 +1203,7 @@ function ns.RestoreAll(preserveRoleplay)
         if restoringAll then return end
         restoringAll = true
         operationDepth = operationDepth + 1
-        combinedStates = {}
+        combinedStates, effectOwners = {}, {}
         for _, action in ipairs(ns.actions) do if not RoleplayOwns(action.effect) then SetActionState(action, false) end end
         operationDepth = operationDepth - 1
         restoringAll = false
@@ -1115,7 +1213,7 @@ function ns.RestoreAll(preserveRoleplay)
     if not ns.db or restoringAll or exitingAll then return end
     restoringAll, exitingAll = true, true
     operationDepth = operationDepth + 1
-    combinedStates = {}
+    combinedStates, effectOwners = {}, {}
     if letterboxShown then
         letterboxShown, letterboxLensHeight = false, nil
         UpdateLetterboxVisibility()
@@ -1129,6 +1227,7 @@ function ns.RestoreAll(preserveRoleplay)
     UpdateEvents()
 end
 local function ForgetCombinedEffect(id)
+    effectOwners[id] = nil
     for lens, state in pairs(combinedStates) do
         for index = #state, 1, -1 do
             if state[index].action.effect == id then table.remove(state, index) end
@@ -1141,7 +1240,7 @@ function ns.SetApplyToLens(id, enabled)
     ns.db.lensEffects[id] = not not enabled
     if not enabled then
         ForgetCombinedEffect(id)
-        if id == "hideui" then ns.RestoreUI()
+        if id == "hideui" then ns.RestoreUI(true)
         elseif id == "letterbox" and letterboxShown then letterboxShown, letterboxLensHeight = false, nil; UpdateLetterboxVisibility()
         elseif id == "camerashift" and cameraShiftActive then RestoreCamera()
         elseif id == "fov" then ns.fovActive, ns.fovLensValue = false, nil; ns.UpdateFOV() end
@@ -1157,7 +1256,7 @@ function ns.SetEffectEnabled(id, enabled)
     if id == "camerashift" and enabled then ns.SetCameraConsent(true) end
     if not enabled then
         ForgetCombinedEffect(id)
-        if id == "hideui" then ns.RestoreUI()
+        if id == "hideui" then ns.RestoreUI(true)
         elseif id == "letterbox" then
             letterboxShown, letterboxLensHeight = false, nil
             UpdateLetterboxVisibility(true)
@@ -1264,8 +1363,8 @@ function ns.ApplyProfilePreferences(settings)
     if ns.CloseCombinedSettings then ns.CloseCombinedSettings() end
     if ns.StopRoleplay then ns.StopRoleplay() end
     operationDepth = operationDepth + 1
-    combinedStates = {}
-    ns.RestoreUI()
+    combinedStates, effectOwners = {}, {}
+    ns.RestoreUI(true)
     ReturnOriginalCamera(true)
     ns.ReturnOriginalFOV()
     ns.runtimeSettings = {}
@@ -1380,7 +1479,7 @@ events:SetScript("OnEvent", function(self, event, name)
         for ordinal, source in ipairs(sources) do
             for _, spec in ipairs(ns.settingSpecs) do
                 if spec.duration then
-                    for _, prefix in ipairs(source == ns.db and { "", "permanent" } or { "" }) do
+                    for _, prefix in ipairs(source == ns.db and spec.effect ~= "hideui" and { "", "permanent" } or { "" }) do
                         local function Field(key) return prefix == "" and key or prefix .. key:sub(1, 1):upper() .. key:sub(2) end
                         if source[Field(spec.key)] == nil then
                             local value = source[Field(spec.duration)]
@@ -1415,7 +1514,7 @@ events:SetScript("OnEvent", function(self, event, name)
         else pendingStartup = true; UpdateEvents() end
     elseif event == "PLAYER_LOGOUT" then
         ns.Profiles.Save()
-        RestoreNames()
+        ns.RestoreUI(true)
         ReturnOriginalCamera(true)
         ns.ReturnOriginalFOV()
     elseif event == "PLAYER_LOGIN" then

@@ -294,6 +294,8 @@ end
 local function pressEscape()
     local frame = RetCinemaEscapeHandler
     if frame and frame:IsShown() then frame.scripts.OnKeyDown(frame, "ESCAPE") end
+    local ui = RetCinemaHideUIAnimator
+    if ui and ui.scripts.OnUpdate then ui.scripts.OnUpdate(ui, 5) end
 end
 local function finishEffects()
     finishCamera()
@@ -301,7 +303,19 @@ local function finishEffects()
     if fov and fov.scripts.OnUpdate then fov.scripts.OnUpdate(fov, 1) end
     local frame = RetCinemaLetterbox
     if frame and frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame, 1) end
+    local ui = RetCinemaHideUIAnimator
+    if ui and ui.scripts.OnUpdate then ui.scripts.OnUpdate(ui, 1) end
 end
+-- Existing toggle/snapshot checks inspect the completed scene. Timing-specific
+-- HideUI tests below restore the original entry points and step each frame.
+local originalUIToggle, originalCombinedToggle = RetCinema_ToggleUI, RetCinema_ToggleCombined
+local function CompleteUIFade()
+    local ui = RetCinemaHideUIAnimator
+    if ui and ui.scripts.OnUpdate then ui.scripts.OnUpdate(ui, 5) end
+end
+RetCinema_ToggleUI = function(...) originalUIToggle(...); CompleteUIFade() end
+RetCinema_ToggleCombined = function(...) originalCombinedToggle(...); CompleteUIFade() end
+assert(not RetCinemaHideUIAnimator, "HideUI animator must not load before the Effect is used")
 assert(ns.icon == 136034 and not ns.db.enableAnimation and ns.db.letterboxHeight == 5 and ns.db.cameraOffset == 1)
 ns.SetLetterboxHeight(10); ns.SetCameraOffset(1.5)
 assert(not ns.db.combinedAsEsc and not ns.db.showSecondBinding)
@@ -721,6 +735,14 @@ local function checkbox(content, text)
         return false
     end)
 end
+local function ToV13(text)
+    text = text:gsub("PROFILE:%d+", "PROFILE:13")
+    return (text:gsub(";([%w_.]+)=([^;]+)", function(key, value)
+        local last = key:match("([^.]+)$")
+        if last == "hideuiDuration" or last == "customHideUIDuration" or key == "advanced.multipleEscapeButtons" then return "" end
+        return ";" .. key .. "=" .. value
+    end))
+end
 local function ToV5(text)
     local newKeys = { fov = true, permanentFov = true, permanentFOV = true, RETCINEMA_FOV = true }
     for _, spec in ipairs(ns.settingSpecs) do
@@ -798,7 +820,7 @@ do
     local button = find(function(f) return f.kind == "Button" and f.text == "Advanced Cinematographer" end)
     assert(button:IsShown() and not button.enabled and not RetCinemaAdvancedDialog)
     advanced.scripts.OnEnter(advanced)
-    assert(GameTooltip:GetText() == "Allow access to hidden, additional and " .. ns.ChatText("RAID_LEADER", "Experimental") .. " options.\n\nDefault: Unchecked")
+    assert(GameTooltip:GetText() == "Allow access to hidden, additional and " .. ns.FormatText("Experimental") .. " options.\n\nDefault: Unchecked")
     advanced:SetChecked(true); click(advanced)
     assert(ns.db.advancedCinematographer and button:IsShown() and not advanced.label:IsShown())
     click(button)
@@ -808,7 +830,7 @@ do
     assert(dialog.groups.HideUI and not dialog.checks.hideInterface, "Effect groups must disclose lazily")
     for _, name in ipairs({ "HideUI", "Letterbox", "CameraShift", "FOV", "Lens" }) do click(dialog.groups[name]) end
     local lite = dialog.groups.LiteRP
-    assert(lite.label:GetText() == ns.ChatText("RAID_LEADER", "[Experimental]") .. " " .. ns.ChatText("EMOTE", "LiteRP"))
+    assert(lite.label:GetText() == ns.FormatText("[Experimental]") .. " " .. ns.FormatText("LiteRP"))
     lite:SetChecked(true); click(lite)
     assert(ns.Advanced("roleplay") and dialog.groups.Move and dialog.groups.Stay and not dialog.checks.roleplayDo and not dialog.checks.roleplayStay)
     assert(dialog.groups.Move.label.color[2] == 0.82 and dialog.groups.Stay.label.color[2] == 0.82)
@@ -1103,7 +1125,7 @@ do
             local check = row.checks[index]
             assert(check.points.TOPLEFT[2] == -1 and check.parent == row.extraContainer)
             local gear = row.gears[index]
-            assert(gear and gear.parent == row.extraContainer and gear.points.TOPLEFT[1] == check and gear.lensIndex == index)
+            assert(gear and gear.parent == row.extraContainer and gear.points.TOP[1] == check.label and gear.lensIndex == index)
             if index > 1 then
                 assert(check.points.TOPLEFT[1] - row.checks[index - 1].points.TOPLEFT[1] == 52)
                 assert(row.membershipRules[index]:IsShown())
@@ -1131,7 +1153,7 @@ do
     -- Per-Effect settings are built lazily and target additional lenses only.
     for _, button in ipairs({ hide1, letter1, camera1 }) do
         local row = button.parent
-        assert(row.gears[1]:IsShown() and not row.extraContainer:IsShown() and row.gears[1].points.TOPLEFT[1] == row.checks[1])
+        assert(row.gears[1]:IsShown() and not row.extraContainer:IsShown() and row.gears[1].points.TOP[1] == row.checks[1].label)
     end
     assert(not hide1.parent.gears[1].enabled, "Simple HideUI has no gear options")
     for _, index in ipairs({ 2, 3 }) do
@@ -1512,7 +1534,7 @@ do
     ns.SetLetterboxHeight(17.2)
     ns.SetMinimapButton(false)
     local exported = ns.Profiles.Export()
-    assert(exported:find("RETCINEMA_PROFILE:12|Photo|", 1, true) == 1)
+    assert(exported:find("RETCINEMA_PROFILE:14|Photo|", 1, true) == 1)
     assert(not exported:find("cameraConsent", 1, true) and not exported:find("cameraRestore", 1, true))
     assert(ns.Profiles.CopyFrom("Default"))
     assert(ns.Profiles.Current() == "Photo" and ns.db.permanentLetterbox and cvars.test_cameraOverShoulder == "3")
@@ -1539,7 +1561,7 @@ do
     assert(ns.Profiles.Delete("Photo") and not ns.db.profiles.Photo)
     local count = #ns.Profiles.List()
     for _, bad in ipairs({
-        "return _G", exported:gsub("PROFILE:12", "PROFILE:13"),
+        "return _G", exported:gsub("PROFILE:14", "PROFILE:15"),
         exported .. ";cameraConsent=true", exported .. ";letterboxHeight=5",
         exported:gsub("letterboxHeight=17.199999999999999", "letterboxHeight=1e999"),
         exported:gsub("showMinimapButton=false;", ""), exported .. ";;",
@@ -1589,7 +1611,7 @@ do
     ns.SetLetterboxHeight(13.4)
     click(childButton("Export"))
     local exportString = RetCinemaCopyDialog.editBox:GetText()
-    assert(exportString:find("RETCINEMA_PROFILE:12|UI Profile|", 1, true) == 1)
+    assert(exportString:find("RETCINEMA_PROFILE:14|UI Profile|", 1, true) == 1)
     RetCinemaCopyDialog:Hide()
     click(childButton("Import"))
     RetCinemaProfileDialog.editBox:SetText("invalid")
@@ -1667,7 +1689,7 @@ do
     local preferences = clone(ns.db.profiles[ns.Profiles.Current()])
     local function settle() for _ = 1, 8 do finishEffects() end end
     ns.SetAdvanced(nil, true)
-    for _, option in ipairs(ns.advancedOptions) do ns.SetAdvanced(option.id, true) end
+    for _, option in ipairs(ns.advancedOptions) do ns.SetAdvanced(option.id, option.id ~= "multipleEscapeButtons") end
     ns.SetEffectSetting("hideInterface", true); ns.SetEffectSetting("hideNames", true)
     while ns.GetCombinedCount() < 5 do assert(ns.AddCombinedLens()) end
     for _, id in ipairs({ "hideui", "letterbox", "camerashift", "fov" }) do ns.SetEffectEnabled(id, true); ns.SetApplyToLens(id, true) end
@@ -1900,7 +1922,11 @@ do
         for _, action in ipairs(ns.actions) do ns.SetCombinedAction(action.binding, action.effect == "hideui", 1) end
         ns.SetCombinedExitAll(1, true)
         RetCinema_ToggleCombined(1); settle()
-        assert(ns.IsRoleplayActive() and (not UIParent:IsShown() or UIParent:GetAlpha() == 0) and bars:IsShown(), "LiteRP must permit unrelated Effects without ending its action")
+        if ns.IsRoleplayLogoutActive() then
+            assert(ns.IsRoleplayActive() and UIParent:IsShown() and UIParent:GetAlpha() > 0 and bars:IsShown(), "GoOffline blocks unrelated Lens buttons by default")
+        else
+            assert(ns.IsRoleplayActive() and (not UIParent:IsShown() or UIParent:GetAlpha() == 0) and bars:IsShown(), "Walk/Stay permit unrelated Effects without ending their action")
+        end
         RetCinema_ToggleCombined(1); settle()
         assert(ns.IsRoleplayActive() and UIParent:IsShown() and bars:IsShown(), "LiteRP must use ordinary restoration instead of exit-all")
         assert(ns.GetCombinedExitAll(1), "Saved Escape Button policy must remain checked")
@@ -1993,7 +2019,7 @@ do
     -- GoOffline selects its own Lens; its animation overrides that Lens and its buttons.
     do
         local rpPage = RetCinemaLiteRPPanel
-        assert(rpPage.name == ns.ChatText("EMOTE", "LiteRP") and rpPage.moveColumn.parent == rpPage.roleplayBox and rpPage.stayColumn.parent == rpPage.roleplayBox)
+        assert(rpPage.name == ns.FormatText("LiteRP") and rpPage.moveColumn.parent == rpPage.roleplayBox and rpPage.stayColumn.parent == rpPage.roleplayBox)
         assert(rpPage.stayColumn.points.TOPLEFT[1] > rpPage.moveColumn.points.TOPLEFT[1])
         local title = find(function(f) return f.parent == rpPage and f:GetText() == "Bring your Lens into RP Actions" end)
         assert(title.fontSize == 18 and title.color[2] == 0.82)
@@ -2021,7 +2047,7 @@ do
         ns.SetEffectSetting("letterboxDuration", duration, false, 2)
         for _, action in ipairs(ns.actions) do ns.SetCombinedAction(action.binding, members[action.binding] == true, 2) end
         ns.SetRoleplayOption("roleplayLogout", false)
-        assert(not goOfflineButton:IsShown() and checkbox(rpPage.content, "GoOffline").label.color[1] == 0.5)
+        assert(not goOfflineButton:IsShown() and checkbox(rpPage.content, "GoOffline").label.color[1] == 1)
         ns.SetRoleplayOption("roleplayLogout", true)
         assert(goOfflineButton:IsShown() and checkbox(rpPage.content, "GoOffline").label.color[1] == 1)
     end
@@ -2055,7 +2081,7 @@ do
     assert(center == 276 + 240 / 2, "The complete membership container must be centered under the third column")
     local summary = binding("RETCINEMA_COMBINED", 1).parent.summary
     assert(summary.justifyH == "CENTER" and 12 + summary.points.TOPLEFT[1] + summary:GetWidth() / 2 == center)
-    assert(general:GetHeight() == 480)
+    assert(general:GetHeight() == 456)
 
     ns.SetAdvanced("roleplay", false)
     assert(next(rp.events) == nil and not rp.scripts.OnUpdate)
@@ -2064,12 +2090,12 @@ do
     -- New preferences are included in profile exports, including the 50% range.
     local originalName = ns.Profiles.Current()
     local export = ns.Profiles.Export()
-    assert(export:find("RETCINEMA_PROFILE:12|", 1, true) == 1 and export:find("letterboxHeight=50", 1, true))
+    assert(export:find("RETCINEMA_PROFILE:14|", 1, true) == 1 and export:find("letterboxHeight=50", 1, true))
     local ok, imported = ns.Profiles.Import(export)
     assert(ok and ns.db.advanced.letterboxFull and ns.db.letterboxHeight == 50 and ns.db.extraCombinedLenses[3].fov == 65)
     assert(ns.Profiles.Activate(originalName) and ns.Profiles.Delete(imported))
     assert(not export:find("roleplayDo=", 1, true) and not export:find("roleplayStay=", 1, true) and export:find("roleplayLogoutTarget=4", 1, true))
-    local legacy11 = export:gsub("PROFILE:12", "PROFILE:11"):gsub(";globalPreset=[^;]+", "")
+    local legacy11 = ToV13(export):gsub("PROFILE:13", "PROFILE:11"):gsub(";advanced%.logoutLensButtons=[^;]+", ""):gsub(";roleplayLogoutAllowLensButtons=[^;]+", ""):gsub(";globalPreset=[^;]+", "")
     local legacy10 = legacy11:gsub(";advanced%.rp%a+=[^;]+", ""):gsub(";[%w_.]*[Cc]ustom%u%w+Duration=[^;]+", "")
     local old10, old10Name = ns.Profiles.Import((legacy10:gsub("PROFILE:11", "PROFILE:10")))
     assert(old10 and ns.Advanced("rpWalk") == ns.db.triggerEnabled and ns.Advanced("rpSit") == ns.db.roleplaySit)
@@ -2176,7 +2202,7 @@ do
     assert(find(function(f) return f.parent == dialog and f.atlas == "Options_HorizontalDivider" end))
     local originalColor = ChatTypeInfo.EMOTE
     ChatTypeInfo.EMOTE = { r = 0.2, g = 0.4, b = 0.6 }
-    assert(ns.ChatText("EMOTE", "LiteRP") == "|cff336699LiteRP|r" and ns.FormatText(ns.FormatText("LiteRP")) == "|cff336699LiteRP|r")
+    assert(ns.FormatText("LiteRP") == "|cffFF8040LiteRP|r" and ns.FormatText(ns.FormatText("LiteRP")) == "|cffFF8040LiteRP|r")
     ChatTypeInfo.EMOTE = originalColor
     for _, name in ipairs({ "RetCinemaAdvancedDialog", "RetCinemaCombinedSettingsDialog", "RetCinemaProfileDialog", "RetCinemaCopyDialog", "RetCinemaWishBoard", "RetCinemaGoOfflineDialog" }) do
         local modal = assert(_G[name]); assert(modal.backdropColor[4] == 0.9 and modal.closeButton.parent == modal and modal.closeButton.points.TOPRIGHT)
@@ -2184,7 +2210,7 @@ do
     end
     ns.ApplyProfilePreferences(preferences); ns.Profiles.Save(); settle()
 end
-print("PASS: Advanced visibility versus activation, idle hidden RP actions, action separators, native chat colors, modal close buttons and overlapping HideUI ownership")
+print("PASS: Advanced visibility versus activation, idle hidden RP actions, action separators, inline colors, modal close buttons and overlapping HideUI ownership")
 
 do
     local function settle() for _ = 1, 8 do finishEffects() end end
@@ -2195,19 +2221,9 @@ do
     for _, action in ipairs(ns.actions) do ns.SetEffectEnabled(action.effect, true); ns.SetApplyToLens(action.effect, true) end
     ns.SetAdvanced(nil, true)
 
-    -- Navigation coloring survives native font-state changes and pooled-row reuse.
-    local nav = CreateFrame("Button")
-    nav.Label = nav:CreateFontString()
-    local initializer = { data = { category = ns.settingsCategories.literp } }
-    function nav:GetElementData() return initializer end
-    function nav:UpdateStateInternal() self.Label:SetTextColor(1, 1, 1) end
-    local hook = navScroll.callbacks[1]
-    hook.callback(hook.owner, nav, initializer)
-    assert(nav.Label:GetText() == ns.ChatText("EMOTE", "LiteRP"))
-    nav:UpdateStateInternal()
-    assert(nav.Label.color[2] == ChatTypeInfo.EMOTE.g and nav.Label.color[3] == ChatTypeInfo.EMOTE.b)
-    initializer = { data = { category = ns.settingsCategories.effect } }
-    nav:UpdateStateInternal(); assert(nav.Label.color[2] == 1, "A recycled row must retain the other category's normal color")
+    -- Inline category colors must not change shared Blizzard rows or fonts.
+    assert(#navScroll.callbacks == 0, "Addon navigation must not recolor Blizzard's pooled rows")
+    assert(ns.settingsCategories.literp.name == ns.FormatText("LiteRP"))
 
     ns.SetAdvanced("roleplay", true)
     Settings.OpenToCategory(ns.settingsCategories.literp:GetID())
@@ -2363,7 +2379,7 @@ do
     ns.SetCombinedAction("RETCINEMA_FOV", true, 2)
     Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
     local row = binding("RETCINEMA_LETTERBOX", 1).parent
-    assert(row.checks[1].reset:IsShown() and row.checks[1].reset.points.TOP[1] == row.gears[1])
+    assert(row.checks[1].reset:IsShown() and row.checks[1].reset.points.LEFT[1] == row.gears[1])
     click(row.gears[1])
     local dialog = RetCinemaCombinedSettingsDialog
     assert(dialog.effectSelector:GetText() == "Letterbox" and dialog.effectSelector.points.TOP[4] > dialog.selector.points.TOP[4])
@@ -2382,12 +2398,12 @@ do
     click(row.checks[1].reset); assert(not ns.GetCombinedActions(1).RETCINEMA_LETTERBOX and not row.checks[1].reset:IsShown())
 
     local export = ns.Profiles.Export()
-    assert(export:find("RETCINEMA_PROFILE:12|", 1, true) == 1 and export:find("globalPreset=ret_like", 1, true))
+    assert(export:find("RETCINEMA_PROFILE:14|", 1, true) == 1 and export:find("globalPreset=ret_like", 1, true))
     local imported, name = ns.Profiles.Import(export)
     assert(imported and ns.GetPresetName() == "ret_like" and ns.db.extraCombinedLenses[2].cameraDuration == 0.42)
     assert(ns.Profiles.Activate("Preset test 1.1.14") and ns.Profiles.Delete(name))
     assert(not ns.Profiles.Import(export:gsub("globalPreset=ret_like", "globalPreset=unknown")))
-    local oldExport = export:gsub("PROFILE:12", "PROFILE:11"):gsub(";globalPreset=[^;]+", "")
+    local oldExport = ToV13(export):gsub("PROFILE:13", "PROFILE:11"):gsub(";advanced%.logoutLensButtons=[^;]+", ""):gsub(";roleplayLogoutAllowLensButtons=[^;]+", ""):gsub(";globalPreset=[^;]+", "")
     imported, name = ns.Profiles.Import(oldExport)
     assert(imported and ns.GetPresetName() == "Default" and ns.db.cameraDuration == 0.42, "Old profiles use Default without erasing explicit durations")
     assert(ns.Profiles.Activate("Preset test 1.1.14") and ns.Profiles.Delete(name))
@@ -2395,7 +2411,7 @@ do
     ns.SetAdvanced("roleplay", true); ns.SetAdvanced("rpLogout", true)
     Settings.OpenToCategory(ns.settingsCategories.literp:GetID())
     local go = checkbox(RetCinemaLiteRPPanel.content, "GoOffline")
-    assert(not go:GetChecked() and go.label.color[1] == 0.5)
+    assert(not go:GetChecked() and go.label.color[1] == 1)
     go:SetChecked(true); click(go); assert(go.label.color[1] == 1 and go.reset:IsShown())
     ns.SetRoleplayTarget("Logout", 0)
     local oldParent, oldCluster = Minimap.parent, MinimapCluster
@@ -2417,14 +2433,292 @@ do
     pressEscape(); settle()
     assert(not quit:IsShown() and Minimap:IsShown() and not MinimapCluster:IsShown(), "A minimap cluster hidden before the scene must remain hidden")
     Minimap:SetParent(oldParent); MinimapCluster = oldCluster
-    go:SetChecked(false); click(go); assert(go.label.color[1] == 0.5 and not go.reset:IsShown())
+    go:SetChecked(false); click(go); assert(go.label.color[1] == 1 and not go.reset:IsShown())
     Settings.OpenToCategory(ns.settingsCategories.support:GetID())
     click(find(function(f) return f.parent == RetCinemaSupportPanel.content and f.text == "Too-Doo" end))
     assert(find(function(f) return f.parent == RetCinemaWishBoard and f.text == ns.FormatText("Update ret_like preset defaults") end))
     RetCinemaWishBoard:Hide()
     assert(ns.Profiles.Activate(original) and ns.Profiles.Delete("Preset test 1.1.14"))
 end
-print("PASS: Global Preset selection, ret_like references, checkbox resets, hundredth precision, cross-Effect CL editing, profile schema 12, GoOffline label/ghost cleanup and minimap pin suppression")
+print("PASS: Global Preset selection, ret_like references, checkbox resets, hundredth precision, cross-Effect CL editing, profile schema 14, GoOffline label/ghost cleanup and minimap pin suppression")
+
+do
+    local function settle() for _ = 1, 8 do finishEffects() end end
+    local original = ns.Profiles.Current()
+    assert(ns.Profiles.Create("Overlap and GoOffline 1.1.15"))
+    for _, action in ipairs(ns.actions) do ns.SetEffectEnabled(action.effect, true); ns.SetApplyToLens(action.effect, true) end
+    while ns.GetCombinedCount() < 3 do assert(ns.AddCombinedLens()) end
+    ns.SetAdvanced(nil, true); ns.SetAdvanced("letterboxSpeed", true)
+    for index = 1, 3 do
+        for _, action in ipairs(ns.actions) do ns.SetCombinedAction(action.binding, false, index) end
+        ns.SetCombinedExitAll(index, false)
+    end
+    for _, index in ipairs({ 2, 3 }) do
+        ns.SetCombinedAction("RETCINEMA_LETTERBOX", true, index)
+        ns.SetEffectSetting("customLetterboxDuration", true, false, index)
+    end
+    ns.SetCombinedEffectValue(2, "letterbox", 15); ns.SetEffectSetting("letterboxDuration", 3, false, 2)
+    ns.SetCombinedEffectValue(3, "letterbox", 10); ns.SetEffectSetting("letterboxDuration", 0.5, false, 3)
+    local function checkHeight(percent, duration)
+        settle()
+        assert(math.abs(ns.GetLetterboxCurrentHeight() - percent) < 0.001, "Unexpected Letterbox height: " .. ns.GetLetterboxCurrentHeight())
+        if duration then assert(ns.runtimeSettings.letterbox.duration == duration) end
+    end
+    -- Reapply a lower Lens, then unwind both Lenses without circular snapshots.
+    RetCinema_ToggleCombined(2); checkHeight(15, 3)
+    RetCinema_ToggleCombined(3); checkHeight(10, 0.5)
+    RetCinema_ToggleCombined(2); checkHeight(15, 3)
+    RetCinema_ToggleCombined(2); checkHeight(10, 0.5)
+    RetCinema_ToggleCombined(3); checkHeight(0)
+    -- Toggling the current Lens preserves the preceding Lens's full settings.
+    RetCinema_ToggleCombined(2); RetCinema_ToggleCombined(3); checkHeight(10, 0.5)
+    RetCinema_ToggleCombined(3); checkHeight(15, 3)
+    RetCinema_ToggleCombined(2); checkHeight(0)
+    -- Consecutive Escape Button presses clear all scenes, also mid-animation.
+    ns.SetCombinedExitAll(3, true)
+    RetCinema_ToggleCombined(2); checkHeight(15, 3)
+    RetCinema_ToggleCombined(3); checkHeight(10, 0.5)
+    RetCinema_ToggleCombined(3); checkHeight(0)
+    RetCinema_ToggleCombined(2); RetCinema_ToggleCombined(3); RetCinema_ToggleCombined(3); checkHeight(0)
+    ns.SetCombinedExitAll(3, false)
+
+    ns.SetAdvanced("roleplay", true); ns.SetAdvanced("rpLogout", true)
+    Settings.OpenToCategory(ns.settingsCategories.main:GetID())
+    local advancedButton = find(function(f) return f.parent == general and f.kind == "Button" and f.text == "Advanced Cinematographer" end)
+    click(advancedButton)
+    local advanced = RetCinemaAdvancedDialog
+    assert(advanced.checks.logoutLensButtons:IsShown() and not advanced.checks.logoutLensButtons:GetChecked())
+    advanced.checks.logoutLensButtons.scripts.OnEnter(advanced.checks.logoutLensButtons)
+    assert(GameTooltip:GetText():match("\n\nDefault: Unchecked$"))
+    advanced.checks.logoutLensButtons:SetChecked(true); click(advanced.checks.logoutLensButtons)
+    assert(ns.LogoutLensButtonsAvailable() and not ns.db.roleplayLogoutAllowLensButtons, "Exposing Allow Lens buttons must not enable its runtime behavior")
+    assert(advanced.checks.hideInterface.label:GetText() == "Don't hide interface elements" and advanced.checks.hideNames.label:GetText() == "Don't hide creature names")
+    advanced:Hide()
+    ns.SetRoleplayOption("roleplayLogout", true); ns.SetRoleplayTarget("Logout", 4)
+    ns.SetCombinedAction("RETCINEMA_CAMERA", true, 2)
+    Settings.OpenToCategory(ns.settingsCategories.literp:GetID())
+    local rpPage = RetCinemaLiteRPPanel
+    local allow = checkbox(rpPage.content, "Allow Lens buttons")
+    assert(allow:IsShown() and not allow:GetChecked())
+    allow.scripts.OnEnter(allow); assert(GameTooltip:GetText():match("\n\nDefault: Unchecked$"))
+    local selector = find(function(f) return f.frameRole == "logoutTarget" end)
+    assert(allow.points.TOPLEFT[2] < selector.points.TOPLEFT[2], "The actual permission belongs below the GoOffline Lens selector")
+    local go = checkbox(rpPage.content, "GoOffline")
+    local gear = find(function(f) return f.frameRole == "goOfflineSettings" end)
+    assert(gear.points.LEFT[3] == 32 and go.label.color[1] == 1)
+    local rp = RetCinemaRoleplayEvents
+    rp.scripts.OnEvent(rp, "PLAYER_CAMPING")
+    assert(ns.IsRoleplayActive() and ns.IsCameraShiftActive())
+    RetCinema_ToggleCameraShift(); assert(ns.IsCameraShiftActive(), "GoOffline's Lens is protected by default")
+    allow:SetChecked(true); click(allow)
+    assert(ns.db.roleplayLogoutAllowLensButtons and allow.reset:IsShown())
+    rp.scripts.OnUpdate(rp, 1)
+    local height = ns.GetLetterboxCurrentHeight()
+    RetCinema_ToggleCameraShift(); assert(not ns.IsCameraShiftActive() and ns.IsRoleplayLogoutActive())
+    RetCinema_ToggleCombined(3)
+    assert(ns.IsRoleplayLogoutActive() and ns.logoutBarHeight == height)
+    rp.scripts.OnUpdate(rp, 1)
+    assert(ns.GetLetterboxCurrentHeight() >= height, "GoOffline's own bar animation retains priority over Lens animation")
+    allow:SetChecked(false); click(allow)
+    assert(not ns.db.roleplayLogoutAllowLensButtons and ns.IsRoleplayEffectOwned("camerashift"))
+    pressEscape(); settle()
+    assert(not ns.IsRoleplayLogoutActive() and not ns.IsRoleplayActive())
+    allow:SetChecked(true); click(allow)
+    ns.SetAdvanced("logoutLensButtons", false)
+    assert(not allow:IsShown() and not ns.LogoutLensButtonsAvailable() and ns.db.roleplayLogoutAllowLensButtons)
+    assert(not ns.SetRoleplayOption("roleplayLogoutAllowLensButtons", false), "Hidden permission has no runtime authority")
+    ns.SetAdvanced("logoutLensButtons", true)
+    assert(allow:IsShown() and allow:GetChecked())
+    click(allow.reset); assert(not ns.db.roleplayLogoutAllowLensButtons and not allow.reset:IsShown())
+
+    -- Effect arrows wrap only through eligible Effect pages and commit the old edit.
+    Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
+    local row = binding("RETCINEMA_LETTERBOX", 1).parent
+    click(row.gears[2])
+    local dialog = RetCinemaCombinedSettingsDialog
+    RetCinemaCombinedBarHeightInput:SetFocus(); RetCinemaCombinedBarHeightInput:SetText("14.2")
+    click(dialog.nextEffect)
+    assert(dialog.action.effect == "camerashift" and dialog.index == 2 and ns.GetCombinedEffectValue(2, "letterbox") == 14.2)
+    click(dialog.nextEffect); assert(dialog.action.effect == "letterbox")
+    click(dialog.previousEffect); assert(dialog.action.effect == "camerashift")
+    ns.CloseCombinedSettings()
+
+    ns.SetAdvanced("rpWalk", true); ns.SetTrigger(true, 1); ns.SyncWalkingMode(false)
+    Settings.OpenToCategory(ns.settingsCategories.literp:GetID())
+    assert(rpPage.walkRule:IsShown() and rpPage.walkRule.points.TOPLEFT[1]:GetText():find("Run mode:", 1, true))
+    ns.SetTrigger(false, 1); assert(not rpPage.walkRule:IsShown())
+    local preset = find(function(f) return f.frameRole == "globalPreset" end)
+    local master = find(function(f) return f.frameRole == "advancedMaster" end)
+    assert(preset.points.TOPLEFT[2] == 0 and master.points.TOPLEFT[2] == 0 and master.points.TOPLEFT[1] > preset.points.TOPLEFT[1])
+    assert(checkbox(general, "Show minimap icon").points.TOPLEFT[2] < preset.points.TOPLEFT[2])
+    local originalRaidColor = ChatTypeInfo.RAID_LEADER
+    ChatTypeInfo.RAID_LEADER = { r = 0, g = 1, b = 0 }
+    assert(ns.FormatText(ns.FormatText("[Experimental] LiteRP")) == "[|cffFF4809Experimental|r] |cffFF8040LiteRP|r" and #navScroll.callbacks == 0)
+    ChatTypeInfo.RAID_LEADER = originalRaidColor
+    local exported = ns.Profiles.Export()
+    assert(exported:find("advanced.logoutLensButtons=true", 1, true) and exported:find("roleplayLogoutAllowLensButtons=false", 1, true))
+    local legacy12 = ToV13(exported):gsub("PROFILE:13", "PROFILE:12"):gsub(";advanced%.logoutLensButtons=[^;]+", ""):gsub(";roleplayLogoutAllowLensButtons=[^;]+", "")
+    local ok, imported = ns.Profiles.Import(legacy12)
+    assert(ok and not ns.db.advanced.logoutLensButtons and not ns.db.roleplayLogoutAllowLensButtons)
+    assert(ns.Profiles.Activate(original) and ns.Profiles.Delete(imported) and ns.Profiles.Delete("Overlap and GoOffline 1.1.15"))
+    settle()
+end
+print("PASS: overlapping Lens reapplication/return chains, consecutive Escape, optional GoOffline Lens buttons, fixed inline colors, Effect arrows and revised settings layout")
+
+do
+    local function settle() for _ = 1, 8 do finishEffects() end end
+    local original = ns.Profiles.Current()
+    assert(ns.Profiles.Create("GoOffline and HideUI 1.1.16"))
+    for _, action in ipairs(ns.actions) do ns.SetEffectEnabled(action.effect, true); ns.SetApplyToLens(action.effect, true) end
+    while ns.GetCombinedCount() < 3 do assert(ns.AddCombinedLens()) end
+    for index = 1, 3 do
+        for _, action in ipairs(ns.actions) do ns.SetCombinedAction(action.binding, false, index) end
+    end
+    ns.SetCombinedAction("RETCINEMA_HIDEUI", true, 1)
+    ns.SetCombinedAction("RETCINEMA_LETTERBOX", true, 2)
+    ns.SetCombinedExitAll(3, true) -- An empty escape Lens must not bypass the lock.
+    ns.SetAdvanced(nil, true); ns.SetAdvanced("roleplay", true); ns.SetAdvanced("rpLogout", true)
+    ns.SetRoleplayOption("roleplayLogout", true)
+    local rp = RetCinemaRoleplayEvents
+    for _, target in ipairs({ -1, 1, 4 }) do
+        ns.SetRoleplayTarget("Logout", target)
+        StaticPopup_Show("CAMP"); rp.scripts.OnEvent(rp, "PLAYER_CAMPING")
+        assert(ns.LensButtonsBlocked() and ns.IsRoleplayLogoutActive())
+        local before = ns.CaptureLensState()
+        for _, action in ipairs(ns.actions) do action.run() end
+        for index = 1, 3 do RetCinema_ToggleCombined(index) end
+        SlashCmdList.RETCINEMA("fov"); SlashCmdList.RETCINEMA("combinedlens3")
+        local after = ns.CaptureLensState()
+        for index, entry in ipairs(before) do
+            assert(entry.active == after[index].active and entry.value == after[index].value, "A blocked Lens button must not change even an unrelated Effect")
+        end
+        assert(ns.IsRoleplayLogoutActive() and rp:GetScript("OnUpdate") and StaticPopup_FindVisible("CAMP"))
+        rp.scripts.OnUpdate(rp, 0.2)
+        pressEscape(); settle(); assert(not ns.IsRoleplayActive() and not StaticPopup_FindVisible("CAMP"))
+    end
+    ns.SetAdvanced("logoutLensButtons", true)
+    assert(ns.SetRoleplayOption("roleplayLogoutAllowLensButtons", true))
+    ns.SetRoleplayTarget("Logout", 1)
+    rp.scripts.OnEvent(rp, "PLAYER_CAMPING")
+    assert(not ns.LensButtonsBlocked())
+    RetCinema_ToggleCameraShift(); assert(ns.IsCameraShiftActive() and ns.IsRoleplayLogoutActive())
+    pressEscape(); settle()
+    ns.SetAdvanced("logoutLensButtons", false)
+    rp.scripts.OnEvent(rp, "PLAYER_CAMPING")
+    assert(ns.db.roleplayLogoutAllowLensButtons and ns.LensButtonsBlocked(), "A saved but hidden permission cannot unlock Lens buttons")
+    pressEscape(); settle()
+    ns.SetRoleplayOption("roleplayLogout", false)
+
+    -- Multiple Escape Buttons are opt-in and survive profile round trips.
+    assert(not ns.Advanced("multipleEscapeButtons"))
+    ns.SetCombinedExitAll(1, true); assert(not ns.GetCombinedExitAll(3))
+    ns.SetAdvanced("multipleEscapeButtons", true)
+    ns.SetCombinedExitAll(2, true); ns.SetCombinedExitAll(3, true)
+    for index = 1, 3 do assert(ns.GetCombinedExitAll(index)) end
+    Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
+    for index = 1, 3 do assert(binding(ns.CombinedBinding(index), 1).parent.escape:IsShown()) end
+    local exported = ns.Profiles.Export()
+    local ok, imported = ns.Profiles.Import(exported)
+    assert(ok and ns.Advanced("multipleEscapeButtons"))
+    for index = 1, 3 do assert(ns.GetCombinedExitAll(index)) end
+    RetCinema_ToggleLetterbox(); settle(); RetCinema_ToggleCombined(3); settle()
+    assert(not bars:IsShown(), "Each empty Escape Button still exits temporary Lenses")
+    ns.SetAdvanced("multipleEscapeButtons", false)
+    assert(ns.GetCombinedExitAll(1) and not ns.GetCombinedExitAll(2) and not ns.GetCombinedExitAll(3))
+    ns.SetAdvanced("multipleEscapeButtons", true)
+    ns.SetCombinedExitAll(2, true)
+    ns.SetAdvanced(nil, false)
+    assert(ns.GetCombinedExitAll(1) and not ns.GetCombinedExitAll(2), "Simple mode retains the one-Escape-Button policy")
+    ns.SetAdvanced(nil, true)
+
+    RetCinema_ToggleUI, RetCinema_ToggleCombined = originalUIToggle, originalCombinedToggle
+    local legacyPressEscape = pressEscape
+    pressEscape = function()
+        local frame = RetCinemaEscapeHandler
+        if frame and frame:IsShown() then frame.scripts.OnKeyDown(frame, "ESCAPE") end
+    end
+    -- The base Effect fades by default; Advanced only customizes its duration.
+    assert(ns.EffectSettings("hideui").duration == 0.5)
+    RetCinema_ToggleUI()
+    assert(RetCinemaHideUIAnimator:GetScript("OnUpdate") and UIParent:IsShown())
+    RetCinemaHideUIAnimator.scripts.OnUpdate(RetCinemaHideUIAnimator, 0.25)
+    assert(UIParent:GetAlpha() > 0 and UIParent:GetAlpha() < 1)
+    RetCinema_ToggleUI(); settle()
+    ns.SetAdvanced("hideuiDuration", true)
+    effectTab(1)
+    local durationCheck = find(function(f) return f.parent == page("hideui").content and f.durationKey == "hideuiDuration" end)
+    assert(durationCheck:IsShown() and not durationCheck:GetChecked() and not RetCinemaHideUIhideuiDurationInput)
+    durationCheck:SetChecked(true); click(durationCheck)
+    local input = RetCinemaHideUIhideuiDurationInput
+    input.scripts.OnEnter(input); assert(GameTooltip:GetText():match("\n\nDefault: 0.5$"))
+    input:SetText("0.42"); input.scripts.OnEnterPressed(input)
+    assert(ns.db.hideuiDuration == 0.42 and input:GetText() == "0.42")
+    click(input.parent.reset); assert(ns.db.hideuiDuration == 0.5 and not input.parent.reset:IsShown())
+    local originalAlpha, originalNames = UIParent:GetAlpha(), cvars.UnitNameNPC
+    UIParent:SetAlpha(0.8)
+    RetCinema_ToggleUI()
+    local animator = RetCinemaHideUIAnimator
+    assert(animator and animator:GetScript("OnUpdate") and UIParent:IsShown() and UIParent:GetAlpha() == 0.8 and cvars.UnitNameNPC == "0")
+    animator.scripts.OnUpdate(animator, 0.25)
+    assert(math.abs(UIParent:GetAlpha() - 0.4) < 0.001)
+    RetCinema_ToggleUI() -- Reverse from the live alpha instead of jumping.
+    assert(UIParent:GetAlpha() == 0.4 and cvars.UnitNameNPC == originalNames)
+    animator.scripts.OnUpdate(animator, 0.25)
+    assert(math.abs(UIParent:GetAlpha() - 0.6) < 0.001)
+    animator.scripts.OnUpdate(animator, 0.25)
+    assert(UIParent:GetAlpha() == 0.8 and not animator:GetScript("OnUpdate") and not animator:IsShown())
+    RetCinema_ToggleUI(); animator.scripts.OnUpdate(animator, 0.5)
+    assert(not UIParent:IsShown() and UIParent:GetAlpha() == 0 and not animator:GetScript("OnUpdate") and not Minimap:IsShown())
+    pressEscape()
+    assert(UIParent:IsShown() and UIParent:GetAlpha() == 0 and animator:GetScript("OnUpdate") and not RetCinemaEscapeHandler.propagateKeyboard)
+    animator.scripts.OnUpdate(animator, 0.25)
+    assert(math.abs(UIParent:GetAlpha() - 0.4) < 0.001)
+    RetCinema_ToggleUI(); assert(UIParent:GetAlpha() == 0.4)
+    animator.scripts.OnUpdate(animator, 0.5)
+    RetCinema_ToggleUI(); animator.scripts.OnUpdate(animator, 0.5)
+    assert(UIParent:GetAlpha() == 0.8 and UIParent:IsShown() and Minimap:IsShown())
+    RetCinema_ToggleUI(); animator.scripts.OnUpdate(animator, 0.1)
+    ns.SetAdvanced("hideuiDuration", false)
+    settle()
+    assert(UIParent:GetAlpha() == 0.8 and UIParent:IsShown() and not animator:GetScript("OnUpdate") and ns.EffectSettings("hideui").duration == 0.5, "Hiding customization restores the base animation and leaves no idle work")
+
+    -- Duration values remain independent for every Combined Lens.
+    ns.SetAdvanced("hideuiDuration", true)
+    ns.SetCombinedAction("RETCINEMA_HIDEUI", true, 2)
+    ns.SetEffectSetting("customHideUIDuration", true, false, 2)
+    ns.SetEffectSetting("hideuiDuration", 0.75, false, 2)
+    assert(ns.EffectSettings("hideui", false, 2).duration == 0.75 and ns.EffectSettings("hideui").duration == 0.5)
+    ns.SetCombinedExitAll(2, false)
+    RetCinema_ToggleCombined(2); animator.scripts.OnUpdate(animator, 0.375)
+    assert(math.abs(UIParent:GetAlpha() - 0.4) < 0.001)
+    RetCinema_ToggleCombined(2); animator.scripts.OnUpdate(animator, 0.75)
+    assert(UIParent:GetAlpha() == 0.8)
+
+    -- Logout countdowns remain visible and cancelable during the UI fade.
+    ns.SetAdvanced("roleplay", true); ns.SetAdvanced("rpLogout", true)
+    ns.SetRoleplayOption("roleplayLogout", true); ns.SetRoleplayTarget("Logout", 0)
+    local popup = StaticPopup_Show("CAMP")
+    rp.scripts.OnEvent(rp, "PLAYER_CAMPING")
+    assert(popup:IsShown() and popup:GetEffectiveAlpha() == 1 and animator:GetScript("OnUpdate"))
+    animator.scripts.OnUpdate(animator, 0.5)
+    assert(UIParent:IsShown() and UIParent:GetAlpha() == 0 and popup:GetEffectiveAlpha() == 1)
+    pressEscape(); settle()
+    assert(not popup:IsShown() and not ns.IsRoleplayActive() and UIParent:GetAlpha() == 0.8)
+    RetCinema_ToggleUI(); animator.scripts.OnUpdate(animator, 0.1)
+    ns.SetEffectEnabled("hideui", false)
+    assert(not animator:GetScript("OnUpdate") and UIParent:GetAlpha() == 0.8)
+    ns.SetEffectEnabled("hideui", true)
+    RetCinema_ToggleUI(); animator.scripts.OnUpdate(animator, 0.1)
+    events.scripts.OnEvent(events, "PLAYER_LOGOUT")
+    assert(UIParent:GetAlpha() == 0.8 and not animator:GetScript("OnUpdate") and not ns.db.hiddenCVars)
+    UIParent:SetAlpha(originalAlpha)
+    assert(ns.Profiles.Activate(original) and ns.Profiles.Delete(imported) and ns.Profiles.Delete("GoOffline and HideUI 1.1.16"))
+    settle()
+    RetCinema_ToggleUI = function(...) originalUIToggle(...); CompleteUIFade() end
+    RetCinema_ToggleCombined = function(...) originalCombinedToggle(...); CompleteUIFade() end
+    pressEscape = legacyPressEscape
+end
+print("PASS: all GoOffline Lens buttons locked by default, multiple Escape Button opt-in, lazy reversible HideUI fades, independent durations, countdown protection and immediate shutdown cleanup")
 
 -- Disabled effects stay idle; old profiles and interrupted camera snapshots migrate safely.
 for _, effect in ipairs(ns.effects) do ns.SetEffectEnabled(effect.id, false) end

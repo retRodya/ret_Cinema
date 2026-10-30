@@ -1,10 +1,23 @@
 local addonName, ns = ...
 
 ns.retColor = "|cff9acd32"
+local chatFallbacks = { RAID_LEADER = { r = 1, g = 0.28, b = 0.04 }, SYSTEM = { r = 1, g = 1, b = 0 }, EMOTE = { r = 1, g = 0.5, b = 0.25 } }
+function ns.ChatColor(kind)
+    local color = ChatTypeInfo and ChatTypeInfo[kind] or chatFallbacks[kind]
+    return color.r, color.g, color.b
+end
+function ns.ChatText(kind, text)
+    local r, g, b = ns.ChatColor(kind)
+    return string.format("|cff%02x%02x%02x%s|r", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5), text)
+end
 function ns.ColorRet(text)
     -- Idempotent: rendering a title twice must not nest color escapes.
     text = tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%xret_|r", "ret_")
     return (text:gsub("ret_", ns.retColor .. "ret_|r"))
+end
+function ns.FormatText(text)
+    text = ns.ColorRet(text):gsub("|c%x%x%x%x%x%x%x%xLiteRP|r", "LiteRP")
+    return (text:gsub("LiteRP", ns.ChatText("EMOTE", "LiteRP")))
 end
 ns.title = ns.ColorRet("ret_|cff40c7ebCinema|r")
 BINDING_HEADER_RETCINEMA = ns.title
@@ -16,6 +29,7 @@ BINDING_NAME_RETCINEMA_FOV = "FOV"
 for index = 2, 5 do _G["BINDING_NAME_RETCINEMA_COMBINED" .. index] = "Combined Lens " .. index end
 
 ns.icon = 136034
+ns.defaults = { letterboxHeight = 5, cameraOffset = 1, animationDuration = 0.5 }
 function ns.GetDescription()
     local getter = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
     return getter and getter(addonName, "Notes") or ""
@@ -42,35 +56,62 @@ ns.actions = {
 }
 
 ns.advancedOptions = {
-    { id = "hideInterface", group = "HideUI", name = "Don't hide interface elements" },
-    { id = "hideNames", group = "HideUI", name = "Don't hide creature names" },
+    { id = "hideInterface", group = "HideUI", name = "Hide interface elements" },
+    { id = "hideNames", group = "HideUI", name = "Hide creature names" },
     { id = "letterboxOpacity", group = "Letterbox", name = "Custom Letterbox transparency" },
-    { id = "letterboxSpeed", group = "Letterbox", name = "Custom Letterbox animation speed" },
+    { id = "letterboxSpeed", group = "Letterbox", name = "Custom Letterbox animation duration" },
     { id = "letterboxFull", group = "Letterbox", name = "Allow bar height up to 50%" },
-    { id = "cameraSpeed", group = "CameraShift", name = "Custom CameraShift animation speed" },
+    { id = "cameraSpeed", group = "CameraShift", name = "Custom CameraShift animation duration" },
     { id = "cameraHeadMovement", group = "CameraShift", name = "Head bob" },
     { id = "cameraTargetFocus", group = "CameraShift", name = "Follow the target" },
-    { id = "fovSpeed", group = "FOV", name = "Custom FOV animation speed", version = 8 },
+    { id = "fovSpeed", group = "FOV", name = "Custom FOV animation duration", version = 8 },
     { id = "secondButton", group = "Lens", name = "Additional keybind button" },
     { id = "moreCombined", group = "Lens", name = "Combined Lenses up to 5" },
     { id = "roleplay", group = "LiteRP", name = "LiteRP", experimental = true },
 }
+ns.roleplayActions = {
+    { kind = "Walk", id = "rpWalk", key = "triggerEnabled" },
+    { kind = "Sit", id = "rpSit", key = "roleplaySit" },
+    { kind = "Lay", id = "rpLay", key = "roleplayLay" },
+    { kind = "Lean", id = "rpLean", key = "roleplayLean" },
+    { kind = "Logout", name = "GoOffline", id = "rpLogout", key = "roleplayLogout" },
+}
+for _, action in ipairs(ns.roleplayActions) do
+    ns.advancedOptions[#ns.advancedOptions + 1] = { id = action.id, group = "LiteRP", name = action.name or action.kind, version = 11, actionKey = action.key }
+end
 function ns.Advanced(id)
     return ns.db and ns.db.advancedCinematographer and ns.db.advanced and ns.db.advanced[id] == true
 end
 function ns.LetterboxMaximum() return ns.Advanced("letterboxFull") and 50 or 25 end
+function ns.RoleplayActionVisible(kind) return ns.Advanced("roleplay") and ns.Advanced("rp" .. kind) end
+function ns.RoleplayActionEnabled(kind)
+    for _, action in ipairs(ns.roleplayActions) do
+        if action.kind == kind then return ns.RoleplayActionVisible(kind) and ns.db[action.key] == true end
+    end
+    return false
+end
 ns.runtimeSettings = {}
 ns.settingSpecs = {
-    { effect = "hideui", key = "hideInterface", label = "Don't hide interface elements", default = true, inverted = true, advanced = "hideInterface" },
-    { effect = "hideui", key = "hideNames", label = "Don't hide creature names", default = true, inverted = true, advanced = "hideNames" },
+    { effect = "hideui", key = "hideInterface", label = "Hide interface elements", default = true, advanced = "hideInterface" },
+    { effect = "hideui", key = "hideNames", label = "Hide creature names", default = true, advanced = "hideNames" },
     { effect = "letterbox", key = "letterboxOpacity", label = "Bar opacity", default = 1, low = 0, high = 1, advanced = "letterboxOpacity" },
-    { effect = "letterbox", key = "letterboxDuration", label = "Animation duration (seconds)", default = 0.3, low = 0.1, high = 5, advanced = "letterboxSpeed" },
-    { effect = "fov", key = "fovDuration", label = "Animation duration (seconds)", default = 0.35, low = 0.1, high = 5, advanced = "fovSpeed", version = 8 },
-    { effect = "camerashift", key = "cameraDuration", label = "Animation duration (seconds)", default = 0.35, low = 0.1, high = 5, advanced = "cameraSpeed" },
+    { effect = "letterbox", key = "letterboxDuration", label = "Animation duration (seconds)", default = ns.defaults.animationDuration, low = 0.1, high = 5, advanced = "letterboxSpeed" },
+    { effect = "fov", key = "fovDuration", label = "Animation duration (seconds)", default = ns.defaults.animationDuration, low = 0.1, high = 5, advanced = "fovSpeed", version = 8 },
+    { effect = "camerashift", key = "cameraDuration", label = "Animation duration (seconds)", default = ns.defaults.animationDuration, low = 0.1, high = 5, advanced = "cameraSpeed" },
     { effect = "camerashift", key = "cameraHeadMovement", label = "Head bob", default = false, cvar = "test_cameraHeadMovementStrength", advanced = "cameraHeadMovement" },
     { effect = "camerashift", key = "cameraTargetFocus", label = "Follow the target", default = false, cvar = "test_cameraTargetFocusEnemyEnable", advanced = "cameraTargetFocus",
         tooltip = "Enable native target focus in and out of combat. Friendly-target tracking depends on the game client." },
 }
+-- Visibility permissions and the actual custom-duration settings are separate.
+for _, spec in ipairs({
+    { effect = "letterbox", key = "customLetterboxDuration", advanced = "letterboxSpeed", duration = "letterboxDuration" },
+    { effect = "camerashift", key = "customCameraDuration", advanced = "cameraSpeed", duration = "cameraDuration" },
+    { effect = "fov", key = "customFovDuration", advanced = "fovSpeed", duration = "fovDuration" },
+}) do
+    for _, option in ipairs(ns.advancedOptions) do if option.id == spec.advanced then spec.label = option.name end end
+    spec.default, spec.version = false, 11
+    ns.settingSpecs[#ns.settingSpecs + 1] = spec
+end
 function ns.SetEffectSetting(key, value, permanent, index)
     if index ~= nil and (type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > ns.GetCombinedCount()) then return false end
     local source = index and index > 1 and ns.db.extraCombinedLenses[index] or ns.db
@@ -111,13 +152,13 @@ function ns.EffectSettings(effect, permanent, index)
     } end
     if effect == "letterbox" then return {
         opacity = ns.Advanced("letterboxOpacity") and read("letterboxOpacity", 1) or 1,
-        duration = ns.Advanced("letterboxSpeed") and read("letterboxDuration", 0.3) or 0.3,
+        duration = ns.Advanced("letterboxSpeed") and read("customLetterboxDuration", false) and read("letterboxDuration", ns.defaults.animationDuration) or ns.defaults.animationDuration,
     } end
     if effect == "fov" then return {
-        duration = ns.Advanced("fovSpeed") and read("fovDuration", 0.35) or 0.35,
+        duration = ns.Advanced("fovSpeed") and read("customFovDuration", false) and read("fovDuration", ns.defaults.animationDuration) or ns.defaults.animationDuration,
     } end
     if effect == "camerashift" then return {
-        duration = ns.Advanced("cameraSpeed") and read("cameraDuration", 0.35) or 0.35,
+        duration = ns.Advanced("cameraSpeed") and read("customCameraDuration", false) and read("cameraDuration", ns.defaults.animationDuration) or ns.defaults.animationDuration,
         headMovement = ns.Advanced("cameraHeadMovement") and read("cameraHeadMovement", false) or false,
         targetFocus = ns.Advanced("cameraTargetFocus") and read("cameraTargetFocus", false) or false,
     } end
@@ -147,22 +188,31 @@ end
 
 function ns.UpdateEscapeHandler()
     if not ns.db or operationDepth > 0 then return end
-    local active = uiHidden or letterboxShown or cameraShiftActive or ns.fovActive or next(combinedStates) ~= nil
+    local active = uiHidden or letterboxShown or cameraShiftActive or ns.fovActive or next(combinedStates) ~= nil or (ns.IsRoleplayActive and ns.IsRoleplayActive())
     if active and not escapeHandler then
         -- Independent of UIParent, so Escape also works with the whole UI hidden.
         escapeHandler = CreateFrame("Frame", "RetCinemaEscapeHandler")
         escapeHandler:SetSize(1, 1)
         escapeHandler:SetPoint("CENTER", UIParent, "CENTER")
         escapeHandler:EnableMouse(false)
+        escapeHandler:SetFrameStrata("DIALOG"); escapeHandler:SetFrameLevel(190)
         -- Native special-window closes also happen during unrelated game actions.
         -- Only an actual Escape key press should end a mode.
         escapeHandler:SetPropagateKeyboardInput(true)
         escapeHandler:EnableKeyboard(true)
-        escapeHandler:SetScript("OnKeyDown", function(_, key)
-            if key == "ESCAPE" then ns.RestoreAll(true) end
+        escapeHandler:SetScript("OnKeyDown", function(self, key)
+            local consume = key == "ESCAPE" and not (ns.IsAddonDialogShown and ns.IsAddonDialogShown())
+            self:SetPropagateKeyboardInput(not consume)
+            if consume then
+                local logout = ns.IsRoleplayLogoutActive and ns.IsRoleplayLogoutActive()
+                ns.RestoreAll()
+                if logout and CancelLogout then CancelLogout() end
+                self:SetPropagateKeyboardInput(false)
+            end
         end)
     end
     if escapeHandler then
+        if active and not escapeHandler:IsShown() then escapeHandler:SetPropagateKeyboardInput(true) end
         escapeHandler:SetShown(not not active)
     end
 end
@@ -233,7 +283,7 @@ local function UpdateLetterboxVisibility(immediate, returnDuration)
     if target > 0 then CreateBars(); SyncScreen() end
     if not bars then return end
     local options = letterboxShown and (ns.runtimeSettings.letterbox or ns.EffectSettings("letterbox")) or ns.EffectSettings("letterbox", ns.db.permanentLetterbox)
-    if not letterboxShown and not ns.db.permanentLetterbox then options = { opacity = 1, duration = 0.3 } end
+    if not letterboxShown and not ns.db.permanentLetterbox then options = { opacity = 1, duration = ns.defaults.animationDuration } end
     bars:SetAlpha(ns.logoutBarHeight and 1 or options.opacity)
     bars:SetScript("OnUpdate", nil)
     animationTarget = nil
@@ -368,8 +418,28 @@ function ns.GetCombinedExitAll(index)
     return ns.db.extraCombinedLenses[index].exitAll
 end
 function ns.SetCombinedExitAll(index, enabled)
+    if type(index) ~= "number" or index % 1 ~= 0 or index < 1 or index > ns.GetCombinedCount() then return false end
+    if enabled then
+        ns.db.combinedAsEsc = false
+        for _, lens in pairs(ns.db.extraCombinedLenses) do lens.exitAll = false end
+    end
     if index == 1 then ns.db.combinedAsEsc = not not enabled
     elseif ns.db.extraCombinedLenses[index] then ns.db.extraCombinedLenses[index].exitAll = not not enabled end
+    if ns.RefreshLensRuntime then ns.RefreshLensRuntime() end
+    return true
+end
+function ns.GetEscapeLens()
+    for index = 1, ns.GetCombinedCount() do if ns.GetCombinedExitAll(index) then return index end end
+end
+function ns.NormalizeEscapeLens(settings)
+    local found = settings.combinedAsEsc == true
+    for index = 2, 5 do
+        local lens = settings.extraCombinedLenses[index]
+        if lens.exitAll then
+            lens.exitAll = not found
+            found = true
+        end
+    end
 end
 function ns.AddCombinedLens()
     if ns.GetCombinedCount() >= ns.CombinedLimit() then return false end
@@ -411,7 +481,19 @@ local function RestoreCombined(index)
     combinedStates[index] = nil
     if not previous then return end
     for _, saved in ipairs(previous) do
-        if ns.IsActionEnabled(saved.action) and not RoleplayOwns(saved.action.effect) then SetActionState(saved.action, saved.active, saved.value, saved.options) end
+        local shared
+        if saved.action.effect == "hideui" then
+            for _, other in pairs(combinedStates) do
+                for _, owner in ipairs(other) do
+                    if owner.action.effect == "hideui" then
+                        shared = true
+                        -- Carry the original baseline to the remaining owner.
+                        if not saved.active then owner.active, owner.value, owner.options = false, saved.value, saved.options end
+                    end
+                end
+            end
+        end
+        if not shared and ns.IsActionEnabled(saved.action) and not RoleplayOwns(saved.action.effect) then SetActionState(saved.action, saved.active, saved.value, saved.options) end
     end
 end
 function ns.RemoveCombinedLens()
@@ -436,6 +518,7 @@ function RetCinema_ToggleCombined(index)
     -- RP-owned Effects cannot be changed by Lens shortcuts. Unrelated Effects
     -- can still toggle, while the saved Escape Button preference is retained.
     if ns.IsRoleplayActive and ns.IsRoleplayActive() then exitAll = false end
+    if exitAll and not ns.HasCombinedActions(index) then ns.RestoreAll(); return end
     if combinedStates[index] and exitAll then
         -- A different button can remove the last unrelated effect. Compare the
         -- effective scene, rather than requiring two consecutive key presses.
@@ -479,9 +562,7 @@ function RetCinema_ToggleCombined(index)
             combinedStates[index] = selected
             for _, saved in ipairs(selected) do
                 local value = ns.GetCombinedEffectValue(index, saved.action.effect)
-                if exitAll or value ~= nil or not saved.active then
-                    SetActionState(saved.action, true, value, ns.EffectSettings(saved.action.effect, false, index))
-                else SetActionState(saved.action, false) end
+                SetActionState(saved.action, true, value, ns.EffectSettings(saved.action.effect, false, index))
             end
         end
     end
@@ -526,6 +607,15 @@ function ns.RestoreUI()
     end
     operationDepth = operationDepth - 1
     UpdateEvents()
+end
+function ns.PrepareLogoutUI()
+    if not uiHidden or not interfaceSuppressed or uiRestoreAlpha ~= nil then return end
+    -- A visible UIParent with alpha zero lets the native countdown opt out of
+    -- inherited alpha, without reparenting it or firing its cancellation hooks.
+    operationDepth = operationDepth + 1
+    uiRestoreAlpha = UIParent:GetAlpha()
+    UIParent:SetAlpha(0); UIParent:Show()
+    operationDepth = operationDepth - 1
 end
 function RetCinema_ToggleUI()
     if operationDepth == 0 and RoleplayOwns("hideui") then return end
@@ -788,7 +878,7 @@ function ns.FOVAvailable() return ns.GetCVar("cameraFov") ~= nil end
 local function StopFOVAnimation()
     if fovAnimator then fovAnimator:SetScript("OnUpdate", nil); fovAnimator:Hide() end
 end
-local fovLastDuration = 0.35
+local fovLastDuration = ns.defaults.animationDuration
 function ns.UpdateFOV(immediate)
     if not ns.db then return end
     StopFOVAnimation()
@@ -830,7 +920,7 @@ function ns.UpdateFOV(immediate)
 end
 function ns.ReturnOriginalFOV()
     StopFOVAnimation()
-    fovLastDuration = 0.35
+    fovLastDuration = ns.defaults.animationDuration
     ns.fovActive, ns.fovLensValue = false, nil
     if ns.db.fovRestore then WriteCVar("cameraFov", ns.db.fovRestore); ns.db.fovRestore = nil end
     UpdateEvents()
@@ -856,7 +946,11 @@ function RetCinema_ToggleFOV(value)
 end
 SetActionState = function(action, active, value, options)
     if active then exitingAll = false end
-    if action.effect == "hideui" and active and uiHidden then ns.RestoreUI() end
+    if action.effect == "hideui" and active and uiHidden then
+        local before, after = ns.runtimeSettings.hideui or ns.EffectSettings("hideui"), options or ns.EffectSettings("hideui")
+        if before.hideInterface == after.hideInterface and before.hideNames == after.hideNames then return end
+        ns.RestoreUI()
+    end
     ns.runtimeSettings[action.effect] = options
     if action.effect == "letterbox" then
         local changed = letterboxShown ~= active or letterboxLensHeight ~= value
@@ -928,7 +1022,12 @@ function ns.SetAdvanced(id, enabled)
         for _, option in ipairs(ns.advancedOptions) do if option.id == id then known = true; break end end
         if not known then return false end
         ns.db.advanced[id] = enabled == true
-        if enabled and (id == "hideInterface" or id == "hideNames") then ns.db[id] = false end
+    end
+    for _, key in ipairs({ "hideInterface", "hideNames" }) do
+        if not ns.Advanced(key) then
+            ns.db[key] = false
+            for _, lens in pairs(ns.db.extraCombinedLenses) do lens[key] = false end
+        end
     end
     ns.RestoreAll()
     ns.runtimeSettings = {}
@@ -1119,6 +1218,7 @@ function ns.ApplyProfilePreferences(settings)
     end
     ns.db.roleplayDo, ns.db.roleplayStay = nil, nil
     for key, value in pairs(settings) do ns.db[key] = value end
+    ns.NormalizeEscapeLens(ns.db)
     if not ns.db.cameraConsent then ns.db.effects.camerashift = false end
     UpdateCombinedBindingName()
     if bars and ns.IsEffectEnabled("letterbox") then
@@ -1143,9 +1243,9 @@ events:SetScript("OnEvent", function(self, event, name)
         ns.db = ret_CinemaDB
         if type(ns.db.showMinimapButton) ~= "boolean" then ns.db.showMinimapButton = true end
         ns.db.minimapAngle = tonumber(ns.db.minimapAngle) or 220
-        ns.db.letterboxHeight = NumberInRange(ns.db.letterboxHeight, 0, 50) or 10
+        ns.db.letterboxHeight = NumberInRange(ns.db.letterboxHeight, 0, 50) or ns.defaults.letterboxHeight
         ns.db.permanentLetterboxHeight = NumberInRange(ns.db.permanentLetterboxHeight, 0, 50) or 10
-        ns.db.cameraOffset = NumberInRange(ns.db.cameraOffset, -15, 15) or 1.5
+        ns.db.cameraOffset = NumberInRange(ns.db.cameraOffset, -15, 15) or ns.defaults.cameraOffset
         ns.db.permanentCameraOffset = NumberInRange(ns.db.permanentCameraOffset, -15, 15) or 1.5
         ns.db.permanentLetterbox = ns.db.permanentLetterbox == true
         ns.db.permanentCameraShift = ns.db.permanentCameraShift == true
@@ -1153,7 +1253,10 @@ events:SetScript("OnEvent", function(self, event, name)
         ns.db.enableAnimation = nil -- Letterbox transitions are always enabled.
         ns.db.advancedCinematographer = ns.db.advancedCinematographer == true
         if type(ns.db.advanced) ~= "table" then ns.db.advanced = {} end
-        for _, option in ipairs(ns.advancedOptions) do ns.db.advanced[option.id] = ns.db.advanced[option.id] == true end
+        for _, option in ipairs(ns.advancedOptions) do
+            if ns.db.advanced[option.id] == nil and option.actionKey then ns.db.advanced[option.id] = ns.db[option.actionKey] == true end
+            ns.db.advanced[option.id] = ns.db.advanced[option.id] == true
+        end
         local fovLow, fovHigh = ns.FOVRange()
         ns.db.fov = NumberInRange(ns.db.fov, fovLow, fovHigh) or ns.FOVDefault()
         ns.db.permanentFov = NumberInRange(ns.db.permanentFov, fovLow, fovHigh) or ns.FOVDefault()
@@ -1209,9 +1312,21 @@ events:SetScript("OnEvent", function(self, event, name)
             for _, action in ipairs(ns.actions) do lens.actions[action.binding] = lens.actions[action.binding] == true end
         end
         ns.db.lensValuesVersion = 1
+        ns.NormalizeEscapeLens(ns.db)
         local sources = { ns.db }
         for index = 2, 5 do sources[#sources + 1] = ns.db.extraCombinedLenses[index] end
         for _, source in ipairs(sources) do
+            for _, spec in ipairs(ns.settingSpecs) do
+                if spec.duration then
+                    for _, prefix in ipairs(source == ns.db and { "", "permanent" } or { "" }) do
+                        local function Field(key) return prefix == "" and key or prefix .. key:sub(1, 1):upper() .. key:sub(2) end
+                        if source[Field(spec.key)] == nil then
+                            local value = source[Field(spec.duration)]
+                            source[Field(spec.key)] = ns.Advanced(spec.advanced) and type(value) == "number" and value ~= (spec.effect == "letterbox" and 0.3 or 0.35)
+                        end
+                    end
+                end
+            end
             for _, spec in ipairs(ns.settingSpecs) do
                 for _, prefix in ipairs(source == ns.db and spec.effect ~= "hideui" and { "", "permanent" } or { "" }) do
                     local key = prefix ~= "" and prefix .. spec.key:sub(1, 1):upper() .. spec.key:sub(2) or spec.key

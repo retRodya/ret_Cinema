@@ -7,9 +7,9 @@ ns.Profiles = Profiles
 -- Schema entries: path, default, minimum, maximum, first version, integer-only, last version.
 local fields = {
     { "showMinimapButton", true }, { "minimapAngle", 220, -360, 360 },
-    { "letterboxHeight", 10, 0, 50 }, { "permanentLetterboxHeight", 10, 0, 50 },
+    { "letterboxHeight", ns.defaults.letterboxHeight, 0, 50 }, { "permanentLetterboxHeight", 10, 0, 50 },
     { "enableAnimation", true, nil, nil, 1, nil, 2 }, { "permanentLetterbox", false },
-    { "cameraOffset", 1.5, -15, 15 }, { "permanentCameraOffset", 1.5, -15, 15 },
+    { "cameraOffset", ns.defaults.cameraOffset, -15, 15 }, { "permanentCameraOffset", 1.5, -15, 15 },
     { "permanentCameraShift", false }, { "combinedAsEsc", false },
     { "advancedCinematographer", false, nil, nil, 3 },
     { "triggerEnabled", false, nil, nil, 5 }, { "triggerTarget", 0, 0, 8, 5, true },
@@ -40,9 +40,9 @@ for index = 2, 5 do
     local prefix = "extraCombinedLenses." .. index
     fields[#fields + 1] = { prefix .. ".exitAll", false, nil, nil, 2 }
     fields[#fields + 1] = { prefix .. ".customLetterbox", false, nil, nil, 4, nil, 4 }
-    fields[#fields + 1] = { prefix .. ".letterboxHeight", 10, 0, 50, 4 }
+    fields[#fields + 1] = { prefix .. ".letterboxHeight", ns.defaults.letterboxHeight, 0, 50, 4 }
     fields[#fields + 1] = { prefix .. ".customCameraShift", false, nil, nil, 4, nil, 4 }
-    fields[#fields + 1] = { prefix .. ".cameraOffset", 1.5, -15, 15, 4 }
+    fields[#fields + 1] = { prefix .. ".cameraOffset", ns.defaults.cameraOffset, -15, 15, 4 }
     fields[#fields + 1] = { prefix .. ".fov", ns.FOVDefault(), 1, 179, 6 }
     for _, spec in ipairs(ns.settingSpecs) do fields[#fields + 1] = { prefix .. "." .. spec.key, spec.default, spec.low, spec.high, spec.version or 6 } end
     for _, action in ipairs(ns.actions) do
@@ -83,8 +83,31 @@ local function Snapshot(source)
     local result = {}
     source = source or {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 10) then
+        if InVersion(field, 11) then
             local value = Read(source, field[1])
+            if value == nil then
+                for _, option in ipairs(ns.advancedOptions) do
+                    if option.actionKey and field[1] == "advanced." .. option.id then value = source[option.actionKey] == true end
+                end
+                local prefix, key = field[1]:match("^(.-)(custom%u%w+Duration)$")
+                if key then
+                    for _, spec in ipairs(ns.settingSpecs) do
+                        if spec.key == key then
+                            local parent = prefix == "" and source or Read(source, prefix:sub(1, -2))
+                            if parent then value = source.advanced and source.advanced[spec.advanced] and type(parent[spec.duration]) == "number" and parent[spec.duration] ~= (spec.effect == "letterbox" and 0.3 or 0.35) or false end
+                        end
+                    end
+                end
+                local suffix = field[1]:match("^permanent(Custom%u%w+Duration)$")
+                if suffix then
+                    for _, spec in ipairs(ns.settingSpecs) do
+                        if spec.key == suffix:sub(1, 1):lower() .. suffix:sub(2) then
+                            local duration = source["permanent" .. spec.duration:sub(1, 1):upper() .. spec.duration:sub(2)]
+                            value = source.advanced and source.advanced[spec.advanced] and type(duration) == "number" and duration ~= (spec.effect == "letterbox" and 0.3 or 0.35) or false
+                        end
+                    end
+                end
+            end
             if value == nil and field[1]:match("^roleplay%a+Target$") and field[1] ~= "roleplayLogoutTarget" then value = source.triggerTarget end
             if source.lensValuesVersion ~= 1 then
                 local prefix, key = field[1]:match("^(extraCombinedLenses%.[2-5])%.([%w]+)$")
@@ -102,6 +125,7 @@ local function Snapshot(source)
         end
     end
     result.lensEffects.smoothmotion = false
+    ns.NormalizeEscapeLens(result)
     return result
 end
 local function Name(value)
@@ -193,14 +217,14 @@ function Profiles.Export()
     Profiles.Save()
     local values = {}
     for _, field in ipairs(fields) do
-        if InVersion(field, 10) then
+        if InVersion(field, 11) then
             local value = Read(ns.db.profiles[ns.db.activeProfile], field[1])
             if type(value) == "boolean" then value = value and "true" or "false"
             else value = string.format("%.17g", value) end
             values[#values + 1] = field[1] .. "=" .. value
         end
     end
-    return "RETCINEMA_PROFILE:10|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
+    return "RETCINEMA_PROFILE:11|" .. Encode(ns.db.activeProfile) .. "|" .. table.concat(values, ";")
 end
 function Profiles.Import(text)
     local ok, errorText = CanChange()
@@ -209,7 +233,7 @@ function Profiles.Import(text)
     text = text:match("^%s*(.-)%s*$")
     local version, encodedName, payload = text:match("^RETCINEMA_PROFILE:(%d+)|([^|]+)|([^|]+)$")
     version = tonumber(version)
-    if not version or version < 1 or version > 10 then return false, "Unsupported or invalid profile export." end
+    if not version or version < 1 or version > 11 then return false, "Unsupported or invalid profile export." end
     local name = Name(Decode(encodedName))
     if not name then return false, "Invalid profile name in export." end
     local settings, seen, count = {}, {}, 0

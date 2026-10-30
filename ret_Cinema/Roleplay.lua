@@ -13,10 +13,33 @@ local loaded = false
 local function LoadRuntime()
     if loaded then return end
     loaded = true
-    local frame, walkHooked, emoteHooked, sitHooked, cancelHooked
+    local frame, walkHooked, emoteHooked, sitHooked, cancelHooked, popupHooked
     local snapshot, pose, activeSource, activeTarget
     local walkingMode, walkSuppressed, generation = nil, false, 0
     local logoutElapsed, logoutStartHeight
+    local countdownFrames = {}
+    local function KeepCountdown(dialog)
+        if logoutElapsed == nil or not dialog or not dialog.SetIgnoreParentAlpha then return end
+        if not countdownFrames[dialog] then
+            countdownFrames[dialog] = { ignore = dialog.IsIgnoringParentAlpha and dialog:IsIgnoringParentAlpha() or false, alpha = dialog:GetAlpha() }
+        end
+        dialog:SetIgnoreParentAlpha(true); dialog:SetAlpha(1)
+    end
+    local function FindCountdown(which)
+        local dialog
+        if StaticPopup_FindVisible then dialog = StaticPopup_FindVisible(which) end
+        if not dialog and StaticPopup_Visible then
+            local name, frame = StaticPopup_Visible(which)
+            dialog = frame or (type(name) == "string" and _G[name])
+        end
+        KeepCountdown(dialog)
+    end
+    local function RestoreCountdown()
+        for dialog, original in pairs(countdownFrames) do
+            dialog:SetIgnoreParentAlpha(original.ignore); dialog:SetAlpha(original.alpha)
+        end
+        countdownFrames = {}
+    end
 
     local function Enabled() return ns.Advanced("roleplay") end
     function ns.TriggerAvailable() return type(ToggleRun) == "function" and type(hooksecurefunc) == "function" end
@@ -59,9 +82,9 @@ local function LoadRuntime()
         local source, target
         if Enabled() then
             if logoutElapsed ~= nil and ns.IsTriggerTargetAvailable(ns.db.roleplayLogoutTarget) then source, target = "GoOffline", ns.db.roleplayLogoutTarget
-            elseif pose and ns.db["roleplay" .. pose] then
+            elseif pose and ns.RoleplayActionEnabled(pose) then
                 source, target = pose, ns.db["roleplay" .. pose .. "Target"]
-            elseif ns.db.triggerEnabled and walkingMode and not walkSuppressed then source, target = "Walk", ns.db.triggerTarget end
+            elseif ns.RoleplayActionEnabled("Walk") and walkingMode and not walkSuppressed then source, target = "Walk", ns.db.triggerTarget end
         end
         if not target or not ns.IsTriggerTargetAvailable(target) then EndScene(); return end
         if source == activeSource and target == activeTarget then return end
@@ -81,7 +104,7 @@ local function LoadRuntime()
         return not (UnitIsDeadOrGhost and UnitIsDeadOrGhost("player"))
     end
     local function SyncFromMovement()
-        if walkingMode ~= nil or not Enabled() or not ns.db.triggerEnabled then return end
+        if walkingMode ~= nil or not Enabled() or not ns.RoleplayActionEnabled("Walk") then return end
         local speed, run = Speed()
         if not speed or speed <= 0 or not run or run <= 2.58 then return end
         if (IsFlying and IsFlying()) or (IsSwimming and IsSwimming()) or (IsFalling and IsFalling()) then return end
@@ -91,7 +114,7 @@ local function LoadRuntime()
         Reconcile()
     end
     local function SyncSoon()
-        if walkingMode ~= nil or not ns.db.triggerEnabled or not ns.IsTriggerTargetAvailable() then return end
+        if walkingMode ~= nil or not ns.RoleplayActionEnabled("Walk") or not ns.IsTriggerTargetAvailable() then return end
         generation = generation + 1
         local token = generation
         if C_Timer and C_Timer.After then
@@ -110,22 +133,25 @@ local function LoadRuntime()
         token = tostring(token or ""):upper()
         if token == "STAND" then pose = nil; Reconcile(); return end
         local kind = token == "SIT" and "Sit" or (token == "LAYDOWN" or token == "SLEEP") and "Lay" or token == "LEAN" and "Lean"
-        if not kind or not ns.db["roleplay" .. kind] or Speed() ~= 0 or not OnGround() then return end
+        if not kind or not ns.RoleplayActionEnabled(kind) or Speed() ~= 0 or not OnGround() then return end
         pose = kind
         Reconcile()
     end
     local function StopLogout()
         local active = logoutElapsed ~= nil
         logoutElapsed = nil
+        RestoreCountdown()
         if frame then frame:SetScript("OnUpdate", nil) end
         if active then Reconcile() end
         if ns.logoutBarHeight then ns.SetLogoutBarHeight(nil, true) end
         Notify()
     end
     local function StartLogout()
-        if not Enabled() or not ns.db.roleplayLogout or not ns.IsEffectEnabled("letterbox") then return end
+        if not Enabled() or not ns.RoleplayActionEnabled("Logout") or not ns.IsEffectEnabled("letterbox") then return end
         logoutElapsed = 0
+        ns.PrepareLogoutUI()
         Reconcile()
+        FindCountdown("CAMP"); FindCountdown("QUIT")
         logoutStartHeight = math.min(ns.db.roleplayLogoutMax, math.max(ns.GetLetterboxCurrentHeight(), ns.db.roleplayLogoutStart))
         ns.SetLogoutBarHeight(logoutStartHeight)
         frame:SetScript("OnUpdate", function(self, elapsed)
@@ -156,12 +182,12 @@ local function LoadRuntime()
     end
     function ns.UpdateTrigger()
         if not Enabled() then ns.StopRoleplay(); return end
-        local walk = ns.db.triggerEnabled and ns.IsTriggerTargetAvailable()
+        local walk = ns.RoleplayActionEnabled("Walk") and ns.IsTriggerTargetAvailable()
         local stay = false
         for _, kind in ipairs({ "Sit", "Lay", "Lean" }) do
-            if ns.db["roleplay" .. kind] and ns.IsTriggerTargetAvailable(ns.db["roleplay" .. kind .. "Target"]) then stay = true end
+            if ns.RoleplayActionEnabled(kind) and ns.IsTriggerTargetAvailable(ns.db["roleplay" .. kind .. "Target"]) then stay = true end
         end
-        local logout = ns.db.roleplayLogout and ns.IsEffectEnabled("letterbox")
+        local logout = ns.RoleplayActionEnabled("Logout") and ns.IsEffectEnabled("letterbox")
         if not walk and not stay and not logout then ns.StopRoleplay(); return end
         if not frame then
             frame = CreateFrame("Frame", "RetCinemaRoleplayEvents")
@@ -184,9 +210,15 @@ local function LoadRuntime()
             hooksecurefunc("CancelLogout", function() if logoutElapsed ~= nil then StopLogout() end end)
             cancelHooked = true
         end
+        if logout and not popupHooked and type(StaticPopup_Show) == "function" and hooksecurefunc then
+            hooksecurefunc("StaticPopup_Show", function(which)
+                if logoutElapsed ~= nil and (which == "CAMP" or which == "QUIT") then FindCountdown(which) end
+            end)
+            popupHooked = true
+        end
         if walk and not walkHooked and ns.TriggerAvailable() then
             hooksecurefunc("ToggleRun", function()
-                if not Enabled() or not ns.db.triggerEnabled then walkingMode = nil; return end
+                if not Enabled() or not ns.RoleplayActionEnabled("Walk") then walkingMode = nil; return end
                 walkSuppressed = false
                 if walkingMode ~= nil then walkingMode = not walkingMode; Reconcile() else SyncSoon() end
             end)
@@ -196,9 +228,9 @@ local function LoadRuntime()
             if C_ChatInfo and type(C_ChatInfo.PerformEmote) == "function" then hooksecurefunc(C_ChatInfo, "PerformEmote", Emote); emoteHooked = true
             elseif type(DoEmote) == "function" then hooksecurefunc("DoEmote", Emote); emoteHooked = true end
         end
-        if ns.db.roleplaySit and stay and not sitHooked and type(SitStandOrDescendStart) == "function" and hooksecurefunc then
+        if ns.RoleplayActionEnabled("Sit") and stay and not sitHooked and type(SitStandOrDescendStart) == "function" and hooksecurefunc then
             hooksecurefunc("SitStandOrDescendStart", function()
-                if not Enabled() or not ns.db.roleplaySit then return end
+                if not Enabled() or not ns.RoleplayActionEnabled("Sit") then return end
                 if pose == "Sit" then pose = nil; Reconcile() else Emote("SIT") end
             end)
             sitHooked = true
@@ -209,7 +241,7 @@ local function LoadRuntime()
     local function ValidTarget(value) return type(value) == "number" and value % 1 == 0 and value >= 0 and value <= 8 end
     function ns.SetTrigger(enabled, target)
         target = target == nil and ns.db.triggerTarget or tonumber(target)
-        if not ValidTarget(target) or (enabled and (not Enabled() or not ns.TriggerAvailable())) then return false end
+        if not ValidTarget(target) or (enabled and (not ns.RoleplayActionVisible("Walk") or not ns.TriggerAvailable())) then return false end
         ns.db.triggerTarget, ns.db.triggerEnabled, walkSuppressed = target, enabled == true, false
         ns.UpdateTrigger(); Notify()
         return true
@@ -223,6 +255,7 @@ local function LoadRuntime()
     end
     function ns.SetRoleplayOption(key, value)
         if key ~= "roleplaySit" and key ~= "roleplayLay" and key ~= "roleplayLean" and key ~= "roleplayLogout" then return false end
+        if value and not ns.RoleplayActionVisible(key:sub(9)) then return false end
         ns.db[key] = value == true
         if pose and not ns.db["roleplay" .. pose] then pose = nil end
         ns.UpdateTrigger(); Notify()

@@ -8,7 +8,8 @@ local builders = {}
 local copyDialog
 local linkFonts = {}
 local DESCRIPTION_FONT_SCALE = 1.5
-local BINDING_BUTTON_WIDTH = 156
+local BINDING_BUTTON_WIDTH = 122
+local LENS_KEY_X, MEMBERSHIP_CENTER, MEMBERSHIP_STRIDE = 120, 384, 52
 local tabSpecs = {}
 for _, effect in ipairs(ns.effects) do tabSpecs[#tabSpecs + 1] = effect end
 
@@ -24,7 +25,7 @@ local function Label(parent, text, font, x, y)
     local label = parent:CreateFontString(nil, "ARTWORK", font or "GameFontHighlight")
     label:SetPoint("TOPLEFT", x or 0, y or 0)
     label:SetJustifyH("LEFT")
-    label:SetText(ns.ColorRet(text))
+    label:SetText(ns.FormatText(text))
     return label
 end
 
@@ -32,7 +33,7 @@ local function Button(parent, text, width, x, y, onClick)
     local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     button:SetSize(width, 26)
     button:SetPoint("TOPLEFT", x, y)
-    button:SetText(ns.ColorRet(text))
+    button:SetText(ns.FormatText(text))
     button:SetScript("OnClick", onClick)
     return button
 end
@@ -44,6 +45,11 @@ local function GearButton(parent, x, y, onClick)
     return button
 end
 local dialogOrder = {}
+function ns.IsAddonDialogShown()
+    if not UIParent:IsShown() or UIParent:GetAlpha() == 0 then return false end
+    for _, dialog in ipairs(dialogOrder) do if dialog:IsShown() then return true end end
+    return false
+end
 local function DialogBackdrop(frame)
     -- Consume Escape at the topmost addon dialog before Blizzard handles it.
     frame:EnableKeyboard(true)
@@ -68,7 +74,11 @@ local function DialogBackdrop(frame)
     frame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border", tile = true, tileSize = 32,
         edgeSize = 32, insets = { left = 10, right = 10, top = 10, bottom = 10 } })
-    frame:SetBackdropColor(0.025, 0.025, 0.025, 0.8)
+    frame:SetBackdropColor(0.025, 0.025, 0.025, 0.9)
+    local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    close:SetSize(28, 28); close:SetPoint("TOPRIGHT", -8, -8)
+    close:SetScript("OnClick", function() frame:Hide() end)
+    frame.closeButton = close
 end
 
 local function ResetIcon(button)
@@ -95,8 +105,8 @@ local function Tooltip(frame, text, orange)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         local hint = type(text) == "function" and text() or text
         local default = type(self.defaultHint) == "function" and self.defaultHint() or self.defaultHint
-        if default then hint = hint .. "\nDefault: " .. default end
-        GameTooltip:SetText(ns.ColorRet(hint), 1, orange and 0.5 or 0.82, 0, 1, true)
+        if default then hint = hint .. "\n\nDefault: " .. default end
+        GameTooltip:SetText(ns.FormatText(hint), 1, orange and 0.5 or 0.82, 0, 1, true)
         GameTooltip:Show()
     end)
     frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -172,9 +182,8 @@ local function CopyText(title, text)
             editBox.copyPending = nil
             editBox:ClearFocus()
         end)
-        Button(copyDialog, CLOSE, 100, 190, -168, function() copyDialog:Hide() end)
     end
-    copyDialog.title:SetText(ns.ColorRet(title))
+    copyDialog.title:SetText(ns.FormatText(title))
     copyDialog.editBox.copyPending = nil
     copyDialog.editBox.readOnlyText = text
     copyDialog.editBox:SetText(text)
@@ -435,16 +444,22 @@ local function NumericControl(parent, name, title, minimum, maximum, suffix, get
     end
     parent:HookScript("OnSizeChanged", Layout)
     Layout()
-    local function ShowValue() value:SetText(string.format("%g", math.max(minimum, math.min(maximum, getValue()))) .. suffix) end
     local function Default() return type(defaultValue) == "function" and defaultValue() or defaultValue or minimum end
-    Tooltip(value, function() return "Enter an exact value.\nDefault: " .. string.format("%g", Default()) .. suffix end)
-    local reset = Button(control, "", 24, 0, 0, function()
+    local reset
+    local function ShowValue()
+        value:SetText(string.format("%g", math.max(minimum, math.min(maximum, getValue()))) .. suffix)
+        if reset then reset:SetShown(math.abs(getValue() - Default()) > 0.000001) end
+    end
+    Tooltip(value, "Enter an exact value.")
+    value.defaultHint = function() return string.format("%g", Default()) .. suffix end
+    reset = Button(control, "", 24, 0, 0, function()
         value:ClearFocus()
         if setValue(Default()) then control.refresh() end
     end)
     reset:ClearAllPoints(); reset:SetPoint("LEFT", value, "RIGHT", 4, 0)
     ResetIcon(reset)
-    Tooltip(reset, function() return "Restore default: " .. string.format("%g", Default()) .. suffix end)
+    Tooltip(reset, "Restore the default value.")
+    reset.defaultHint = value.defaultHint
     control.input, control.slider, control.reset = value, slider, reset
     value:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
     local function Commit(self)
@@ -482,17 +497,18 @@ local function OpenAdvanced()
         advancedDialog = dialog
         dialog:SetSize(470, 570); dialog:SetPoint("CENTER"); dialog:SetFrameStrata("DIALOG"); dialog:EnableMouse(true)
         DialogBackdrop(dialog)
-        Label(dialog, "Advanced Cinematographer", "GameFontHighlightLarge", 24, -24)
+        dialog.title = SettingsHeading(dialog, "Advanced Cinematographer")
+        dialog.title:SetTextColor(1, 0.82, 0)
         table.insert(UISpecialFrames, "RetCinemaAdvancedDialog")
         local scroll = CreateFrame("ScrollFrame", nil, dialog, "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", 24, -58); scroll:SetSize(400, 450)
         local body = CreateFrame("Frame", nil, scroll); body:SetSize(392, 450); scroll:SetScrollChild(body)
         dialog.body, dialog.checks, dialog.groups = body, {}, {}
         local lite = { name = "LiteRP", id = "roleplay", experimental = true, children = {
-            { name = "Move", children = { { name = "Walk", key = "triggerEnabled" } } },
+            { name = "Move", children = { { name = "Walk", id = "rpWalk" } } },
             { name = "Stay", children = {
-                { name = "Sit", key = "roleplaySit" }, { name = "Lay", key = "roleplayLay" },
-                { name = "Lean", key = "roleplayLean" }, { name = "GoOffline", key = "roleplayLogout" },
+                { name = "Sit", id = "rpSit" }, { name = "Lay", id = "rpLay" },
+                { name = "Lean", id = "rpLean" }, { name = "GoOffline", id = "rpLogout" },
             } },
         } }
         local roots = { { name = "Effect", children = {} }, { name = "Lens", children = {} }, lite }
@@ -500,7 +516,7 @@ local function OpenAdvanced()
             roots[1].children[#roots[1].children + 1] = { name = name, children = {} }
         end
         for _, option in ipairs(ns.advancedOptions) do
-            if option.id ~= "roleplay" then
+            if option.group ~= "LiteRP" then
                 local destination = option.group == "Lens" and roots[2]
                 if not destination then for _, node in ipairs(roots[1].children) do if node.name == option.group then destination = node end end end
                 destination.children[#destination.children + 1] = { name = option.name, id = option.id, experimental = option.experimental }
@@ -508,29 +524,25 @@ local function OpenAdvanced()
         end
         local function Value(node)
             if node.id then return ns.db.advanced[node.id] end
-            if node.key then return ns.db[node.key] end
             return node.expanded
         end
         local function AnyEnabled(node)
-            if node.id or node.key then return Value(node) end
+            if node.id then return Value(node) end
             for _, child in ipairs(node.children) do if AnyEnabled(child) then return true end end
             return false
         end
         local function Layout(nodes, depth, y, shown)
             for _, node in ipairs(nodes) do
-                local option = node.id or node.key
+                local option = node.id
                 if shown and not node.control then
                     if option then
-                        node.control = Checkbox(body, (node.experimental and "|cffff8000[Experimental]|r " or "") .. (node.name == "LiteRP" and "|cffff99ccLiteRP|r" or node.name), 0, 0, function(self)
-                            if node.id then ns.SetAdvanced(node.id, self:GetChecked())
-                            elseif node.key == "triggerEnabled" then ns.SetTrigger(self:GetChecked())
-                            else ns.SetRoleplayOption(node.key, self:GetChecked()) end
+                        node.control = Checkbox(body, (node.experimental and ns.ChatText("RAID_LEADER", "[Experimental]") .. " " or "") .. (node.name == "LiteRP" and ns.ChatText("EMOTE", "LiteRP") or node.name), 0, 0, function(self)
+                            ns.SetAdvanced(node.id, self:GetChecked())
                             dialog.refresh()
                         end)
-                        if node.experimental then node.control.label:SetTextColor(1, 0.5, 0)
-                        elseif node.children then node.control.label:SetTextColor(1, 0.82, 0) end
-                        Tooltip(node.control, node.id == "letterboxFull" and "Allow each bar to cover up to half the screen." or node.name)
-                        dialog.checks[node.id or node.key] = node.control
+                        if node.children and not node.experimental then node.control.label:SetTextColor(1, 0.82, 0) end
+                        Tooltip(node.control, node.id == "letterboxFull" and "Show the option to allow each bar to cover up to half the screen." or "Show " .. node.name .. " settings. This does not enable the action or change its settings.")
+                        dialog.checks[node.id] = node.control
                     else
                         node.expanded = AnyEnabled(node)
                         node.control = Button(body, "+", 24, 0, 0, function() node.expanded = not node.expanded; dialog.refresh() end)
@@ -550,7 +562,6 @@ local function OpenAdvanced()
             return y
         end
         dialog.refresh = function() body:SetHeight(math.max(450, -Layout(roots, 0, 0, true) + 12)) end
-        Button(dialog, CLOSE, 100, 185, -524, function() dialog:Hide() end)
     end
     advancedDialog.refresh()
     advancedDialog:Show()
@@ -568,8 +579,8 @@ builders.general = function(page, content)
     advancedButton:SetDisabledFontObject("GameFontDisable")
     advanced.frameRole = "advancedMaster"
     advancedButton:SetMotionScriptsWhileDisabled(true)
-    Tooltip(advanced, "Allow access to additional and |cffff8000Experimental|r options.")
-    Tooltip(advancedButton, "|cffff8000Warning!|r Options that are not enabled by default may worsen your user experience.")
+    Tooltip(advanced, "Allow access to hidden, additional and " .. ns.ChatText("RAID_LEADER", "Experimental") .. " options.")
+    Tooltip(advancedButton, ns.ChatText("SYSTEM", "Warning!") .. " Options that are not enabled by default may worsen your user experience.")
     Label(content, "Enable Effect:", "GameFontNormal", 0, -46)
     local box = FramedBox(content, -72, 50)
     local checks = {}
@@ -633,32 +644,33 @@ builders.general = function(page, content)
 end
 
 local function ExtraOptions(parent, effect, permanent, indexGetter, namePrefix)
-    local controls, durationChecks, expanded = {}, {}, {}
+    local controls, durationChecks = {}, {}
     local refresh
     local function Source() local index = indexGetter and indexGetter(); return index and index > 1 and ns.db.extraCombinedLenses[index] or ns.db end
-    local function ExpandedKey(key) return key .. ":" .. tostring(indexGetter and indexGetter() or (permanent and "permanent" or "lens")) end
     local function Key(spec) return permanent and "permanent" .. spec.key:sub(1, 1):upper() .. spec.key:sub(2) or spec.key end
     refresh = function(y, shown)
         for _, spec in ipairs(ns.settingSpecs) do
-            if spec.effect == effect then
+            if spec.effect == effect and not spec.duration then
                 local visible = shown ~= false and (not spec.advanced or ns.Advanced(spec.advanced))
                 local control = controls[spec.key]
                 if spec.key:match("Duration$") then
+                    local custom
+                    for _, candidate in ipairs(ns.settingSpecs) do if candidate.duration == spec.key then custom = candidate; break end end
                     local check = durationChecks[spec.key]
                     if visible and not check then
                         local key = spec.key
-                        check = Checkbox(parent, "Show animation duration", -4, y, function(self)
-                            expanded[ExpandedKey(key)] = self:GetChecked()
+                        check = Checkbox(parent, custom.label, -4, y, function(self)
+                            ns.SetEffectSetting(custom.key, self:GetChecked(), permanent, indexGetter and indexGetter())
                             ns.RefreshEffectSettings()
                         end)
                         check.durationKey, check.permanentMode = key, permanent
                         durationChecks[key] = check
                     end
                     if check then
-                        check:SetShown(visible); check:SetChecked(expanded[ExpandedKey(spec.key)] == true)
+                        check:SetShown(visible); check:SetChecked(Source()[Key(custom)] == true)
                         if visible then check:SetPoint("TOPLEFT", -4, y); y = y - 32 end
                     end
-                    visible = visible and expanded[ExpandedKey(spec.key)] == true
+                    visible = visible and Source()[Key(custom)] == true
                 end
                 if visible then
                     if not control then
@@ -670,12 +682,11 @@ local function ExtraOptions(parent, effect, permanent, indexGetter, namePrefix)
                         if type(spec.default) == "boolean" then
                             control = Checkbox(parent, spec.label, -4, y, function(self)
                                 local checked = self:GetChecked()
-                                if setting.inverted then checked = not checked end
                                 Set(checked)
                             end)
+                            control.defaultHint = spec.default and "Checked" or "Unchecked"
                             control.refresh = function()
                                 local checked = Source()[Key(setting)]
-                                if setting.inverted then checked = not checked end
                                 control:SetChecked(checked)
                                 control:SetEnabled(not setting.cvar or ns.GetCVar(setting.cvar) ~= nil)
                             end
@@ -705,7 +716,7 @@ local function ExtraOptions(parent, effect, permanent, indexGetter, namePrefix)
 end
 
 builders.hideui = function(page, content)
-    PlannedPermanent(content, "Permanent Hide UI", 0)
+    PlannedPermanent(content, "Permanent HideUI", 0)
     local apply = Checkbox(content, "Apply HideUI to Lens", -4, -36, function(self)
         ns.SetApplyToLens("hideui", self:GetChecked())
     end)
@@ -713,7 +724,7 @@ builders.hideui = function(page, content)
     local extras = ExtraOptions(content, "hideui", false, nil, "RetCinemaHideUI")
     page.refresh = function()
         apply:SetChecked(ns.IsAppliedToLens("hideui"))
-        local y = extras(-80)
+        local y = extras(-80, ns.IsAppliedToLens("hideui"))
         content:SetHeight(math.max(140, -y + 32))
     end
     content:SetHeight(140)
@@ -745,7 +756,8 @@ local function BuildLayeredEffect(page, content, camera)
         else title = permanentMode and "Permanent bar height" or "Lens bar height" end
         return NumericControl(content, name, title,
             camera and -15 or 0, camera and 15 or 25, camera and "" or "%",
-            function() return ns.db[field] end, function(value) return setValue(value, permanentMode) end, camera and 1.5 or 10)
+            function() return ns.db[field] end, function(value) return setValue(value, permanentMode) end,
+            camera and (permanentMode and 1.5 or ns.defaults.cameraOffset) or (permanentMode and 10 or ns.defaults.letterboxHeight))
     end
     page.refresh = function()
         local usable = not camera or (ns.CameraAvailable() and ns.db.cameraConsent)
@@ -884,9 +896,10 @@ function ns.RefreshCombinedSettings()
         dialog.refresh()
     end
 end
-local function OpenCombinedSettings(action)
-    if combinedDialog and combinedDialog:IsShown() and combinedDialog.action == action then combinedDialog:Hide(); return end
+local function OpenCombinedSettings(action, requestedIndex)
+    if combinedDialog and combinedDialog:IsShown() and combinedDialog.action == action and combinedDialog.index == requestedIndex then combinedDialog:Hide(); return end
     if not HasCombinedSettings(action) then return end
+    if not ns.GetCombinedActions(requestedIndex)[action.binding] then return end
     if not combinedDialog then
         local dialog = CreateFrame("Frame", "RetCinemaCombinedSettingsDialog", UIParent, "BackdropTemplate")
         combinedDialog = dialog
@@ -965,7 +978,7 @@ local function OpenCombinedSettings(action)
                         function(value)
                             if dialog.closing then return false end
                             return ns.SetCombinedEffectValue(dialog.index, selectedEffect, value)
-                        end, effect == "letterbox" and 10 or effect == "fov" and ns.FOVDefault() or 1.5)
+                        end, effect == "letterbox" and ns.defaults.letterboxHeight or effect == "fov" and ns.FOVDefault() or ns.defaults.cameraOffset)
                     control:SetPoint("TOPLEFT", 0, 0)
                     dialog.controls[effect] = control
                 end
@@ -992,12 +1005,11 @@ local function OpenCombinedSettings(action)
             dialog.closing = false
             for _, group in pairs(dialog.extraGroups) do group.closing = false end
         end)
-        Button(dialog, CLOSE, 100, 260, -576, function() dialog:Hide() end)
     end
     ClearDialogFocus()
     local dialog = combinedDialog
     dialog.action = action
-    dialog.index = CombinedSettingsChoices(action)[1].value
+    dialog.index = requestedIndex
     for _, effect in ipairs(ns.effects) do if effect.id == action.effect then dialog.description:SetText(effect.description) end end
     dialog:Show()
     dialog.refresh()
@@ -1006,11 +1018,11 @@ end
 builders.lens = function(page, content)
     local listedCount, pendingCount = 1, 1
     Label(content, "Effect", "GameFontNormal", 12, 0)
-    local keyHeader = Label(content, "Lens button", "GameFontNormal", 172, 0)
+    local keyHeader = Label(content, "Lens button", "GameFontNormal", LENS_KEY_X + 12, 0)
     keyHeader:SetWidth(BINDING_BUTTON_WIDTH)
     keyHeader:SetJustifyH("CENTER")
-    local addHeader = Label(content, "", "GameFontNormal", 342, 0)
-    addHeader:SetWidth(190)
+    local addHeader = Label(content, "", "GameFontNormal", MEMBERSHIP_CENTER + 12 - 120, 0)
+    addHeader:SetWidth(240)
     addHeader:SetWordWrap(true)
     addHeader:SetJustifyH("CENTER")
     Divider(content, "TOP", -38)
@@ -1020,14 +1032,14 @@ builders.lens = function(page, content)
         row:SetSize(518, 26)
         row.binding, row.effect, row.combinedIndex = binding, effect, combinedIndex
         row.label = Label(row, _G["BINDING_NAME_" .. binding], "GameFontHighlight", 0, -6)
-        CreateBindingButton(row, binding, 1, 160, 0)
-        row.orLabel = Label(row, "or", "GameFontHighlightSmall", 160, -29)
+        CreateBindingButton(row, binding, 1, LENS_KEY_X, 0)
+        row.orLabel = Label(row, "or", "GameFontHighlightSmall", LENS_KEY_X, -29)
         row.orLabel:SetWidth(BINDING_BUTTON_WIDTH)
         row.orLabel:SetJustifyH("CENTER")
-        CreateBindingButton(row, binding, 2, 160, -48)
+        CreateBindingButton(row, binding, 2, LENS_KEY_X, -48)
         local hover = CreateFrame("Frame", nil, row)
         hover:SetPoint("TOPLEFT")
-        hover:SetSize(150, 26)
+        hover:SetSize(LENS_KEY_X - 4, 26)
         Tooltip(hover, "Can be enabled via\n/retcin " .. command)
         return row
     end
@@ -1035,7 +1047,7 @@ builders.lens = function(page, content)
         local second = ns.Advanced("secondButton") and (row.combinedIndex ~= nil or GetBindingKey(row.binding) ~= nil)
         row.orLabel:SetShown(second)
         row:SetHeight(math.max(row.combinedIndex and (second and 114 or 66) or second and 74 or 26, minimum or 0))
-        if row.escape then row.escape:SetPoint("TOPLEFT", 156, second and -84 or -36) end
+        if row.escape then row.escape:SetPoint("TOPLEFT", LENS_KEY_X - 4, second and -84 or -36) end
         row:SetPoint("TOPLEFT", 12, y)
         row:SetPoint("TOPRIGHT", -12, y)
         return y - row:GetHeight()
@@ -1045,20 +1057,21 @@ builders.lens = function(page, content)
         local row = BindingRow(combinedBox, ns.CombinedBinding(index), nil, "combinedlens" .. index, index)
         local font, size, flags = row.label:GetFont()
         row.label:SetFont(font, size + 2, flags)
-        row.escape = Checkbox(row, "Escape Button", 156, -84, function(self)
+        row.escape = Checkbox(row, "Escape Button", LENS_KEY_X - 4, -84, function(self)
             local checked = self:GetChecked()
             StopListening()
             ns.SetCombinedExitAll(index, checked)
             self:SetChecked(checked)
         end)
         row.escape:SetMotionScriptsWhileDisabled(true)
-        row.summary = Label(row, "", "GameFontHighlightSmall", 330, -6)
-        row.summary:SetWidth(190)
+        row.summary = Label(row, "", "GameFontHighlightSmall", MEMBERSHIP_CENTER - 120, -6)
+        row.summary:SetWidth(240)
         row.summary:SetJustifyH("CENTER")
         row.summary:SetWordWrap(true)
         Tooltip(row.escape, function()
             return ns.IsRoleplayActive() and "Effects controlled by an RP action ignore Lens buttons until that action ends. Unrelated Effects can still toggle; Escape Button behavior resumes afterward." or
-                "Press again to exit all Lenses when only this Combined Lens's Effects remain. Otherwise, replace the remaining Effects with this Lens first. Permanent Effects are preserved."
+                (not ns.HasCombinedActions(index) and "Exit all active Lenses with this button. Permanent Effects are preserved." or
+                "Press again to exit all Lenses when only this Combined Lens's Effects remain. Otherwise, replace the remaining Effects with this Lens first. Permanent Effects are preserved.")
         end)
         if index > 1 then Divider(row, "TOP", 16) end
         combinedRows[index] = row
@@ -1083,7 +1096,7 @@ builders.lens = function(page, content)
     bindingStatus = LargeYellow(Label(content, "", "GameFontHighlight", 0, 0), 1.5)
     local function RefreshLens()
         local count = math.min(pendingCount, ns.GetCombinedCount())
-        for index = 2, ns.GetCombinedCount() do if ns.HasCombinedActions(index) then count = math.max(count, index) end end
+        for index = 2, ns.GetCombinedCount() do if ns.HasCombinedActions(index) or ns.GetCombinedExitAll(index) then count = math.max(count, index) end end
         count = math.max(1, count)
         listedCount = count
         addHeader:SetText(count == 1 and "Add to Combined Lens" or "Add to a specific Combined Lens")
@@ -1108,6 +1121,16 @@ builders.lens = function(page, content)
                         return "Add " .. _G["BINDING_NAME_" .. row.binding] .. " to Combined Lens " .. lensIndex
                     end)
                     row.checks[index] = check
+                    local gear = GearButton(row.extraContainer, 0, 0, function() StopListening(); OpenCombinedSettings(ns.actions[row.actionIndex], lensIndex) end)
+                    gear:SetSize(18, 24)
+                    gear.frameRole, gear.lensIndex = "combinedEffectSettings", lensIndex
+                    Tooltip(gear, "Configure " .. _G["BINDING_NAME_" .. row.binding] .. " for Combined Lens " .. lensIndex .. ".")
+                    row.gears[index] = gear
+                    if index > 1 then
+                        local rule = row.extraContainer:CreateTexture(nil, "ARTWORK")
+                        rule:SetColorTexture(0.6, 0.6, 0.6, 0.3); rule:SetSize(1, 32)
+                        row.membershipRules[index] = rule
+                    end
                 end
             end
             for index, check in ipairs(row.checks) do
@@ -1115,30 +1138,37 @@ builders.lens = function(page, content)
                 check:SetShown(index <= count)
                 check:SetChecked(ns.GetCombinedActions(index)[row.binding])
                 check:ClearAllPoints()
-                check:SetPoint("TOPLEFT", count == 1 and 411 or 4 + (index - 1) * 28, -1)
+                check:SetSize(22, 24)
+                check:SetPoint("TOPLEFT", count == 1 and MEMBERSHIP_CENTER - 21 or 4 + (index - 1) * MEMBERSHIP_STRIDE, -1)
                 check.label:SetText(count > 1 and tostring(index) or "")
                 check.label:ClearAllPoints()
                 check.label:SetPoint("TOP", check, "BOTTOM", 0, 0)
+                local gear = row.gears[index]
+                gear:SetParent(count > 1 and row.extraContainer or row)
+                gear:SetShown(index <= count)
+                gear:SetEnabled(ns.GetCombinedActions(index)[row.binding] == true and HasCombinedSettings(ns.actions[row.actionIndex]))
+                gear:ClearAllPoints(); gear:SetPoint("TOPLEFT", check, "TOPRIGHT", 2, 0)
+                local rule = row.membershipRules[index]
+                if rule then
+                    rule:SetShown(index <= count); rule:SetPoint("TOPLEFT", (index - 1) * MEMBERSHIP_STRIDE, 0)
+                end
             end
-            row.gear:Show()
-            row.gear:SetEnabled(HasCombinedSettings(ns.actions[row.actionIndex]))
             row.extraContainer:SetShown(count >= 2)
-            row.extraContainer:SetSize(count * 28 + 8, 50)
-            row.extraContainer:SetPoint("TOPLEFT", 425 - (count * 28 + 8) / 2, 0)
-            row.gear:ClearAllPoints()
-            if count > 1 then row.gear:SetPoint("TOPLEFT", row.extraContainer, "TOPRIGHT", 6, 0)
-            else row.gear:SetPoint("TOPLEFT", row.checks[1], "TOPRIGHT", 6, 0) end
+            row.extraContainer:SetSize(count * MEMBERSHIP_STRIDE + 8, 50)
+            row.extraContainer:SetPoint("TOPLEFT", MEMBERSHIP_CENTER - (count * MEMBERSHIP_STRIDE + 8) / 2, 0)
             if listed then y = PlaceRow(row, y, count > 1 and 42 or 28) - 28; visible = visible + 1 end
         end
         combinedBox:SetShown(visible > 0)
         local combinedY = -18
+        local escapeLens = ns.GetEscapeLens()
         for index = 1, count do
-            local listed = ns.HasCombinedActions(index)
+            local listed = ns.HasCombinedActions(index) or ns.GetCombinedExitAll(index) or (index > 1 and index <= pendingCount)
             local row = combinedRows[index] or (listed and BuildCombined(index))
             if row then
                 row:SetShown(listed)
                 row.label:SetText(count > 1 and "Combined Lens " .. index or "Combined Lens")
                 row.escape:SetChecked(ns.GetCombinedExitAll(index))
+                row.escape:SetShown(not escapeLens or escapeLens == index)
                 row.escape:SetEnabled(not (ns.GetCombinedExitAll(index) and ns.IsRoleplayActive()))
                 local names = {}
                 for _, action in ipairs(ns.actions) do
@@ -1172,18 +1202,11 @@ builders.lens = function(page, content)
     end
     for index, action in ipairs(ns.actions) do
         local row = BindingRow(content, action.binding, action.effect, action.command)
-        row.checks = {}
+        row.checks, row.gears, row.membershipRules = {}, {}, {}
         row.actionIndex = index
         row.extraContainer = FramedBox(row, 0, 50)
         row.extraContainer:ClearAllPoints()
         row.extraContainer:SetPoint("TOPLEFT", 407, 0)
-        row.gear = Button(row, "", 26, 0, 0, function() StopListening(); OpenCombinedSettings(action) end)
-        row.gear.frameRole = "combinedEffectSettings"
-        local icon = row.gear:CreateTexture(nil, "ARTWORK")
-        icon:SetTexture("Interface\\AddOns\\ret_Cinema\\Assets\\Settings")
-        icon:SetPoint("CENTER")
-        icon:SetSize(18, 18)
-        Tooltip(row.gear, "Configure " .. _G["BINDING_NAME_" .. action.binding] .. " for selected Combined Lenses, including Combined Lens 1.")
         Divider(row, "BOTTOM", -12)
         rows[index] = row
     end
@@ -1272,8 +1295,8 @@ SelectTab = function(index)
         effectTab:SetHighlightFontObject(font)
         effectTab:SetDisabledFontObject(font)
         effectTab:GetFontString():SetTextColor(gray and 0.5 or 1, gray and 0.5 or 0.82, gray and 0.5 or 0)
-        headerDescription:SetText(ns.ColorRet(info.description))
-        headerHint:SetText(ns.ColorRet(info.hint or ""))
+        headerDescription:SetText(ns.FormatText(info.description))
+        headerHint:SetText(ns.FormatText(info.hint or ""))
         page:Show()
         if page.refresh then page.refresh() end
     end
@@ -1351,7 +1374,7 @@ local function ProfileDialog(mode, title, text, submit)
         dialog.error:SetWordWrap(true)
         dialog.submitButton = Button(dialog, "", 120, 120, -226, function()
             local ok, errorText = dialog.submit(dialog.editBox:GetText())
-            if ok then dialog:Hide() else dialog.error:SetText(ns.ColorRet(errorText or "Could not update the profile.")) end
+            if ok then dialog:Hide() else dialog.error:SetText(ns.FormatText(errorText or "Could not update the profile.")) end
         end)
         Button(dialog, "Cancel", 120, 258, -226, function() dialog:Hide() end)
         dialog.editBox:SetScript("OnEnterPressed", function()
@@ -1362,8 +1385,8 @@ local function ProfileDialog(mode, title, text, submit)
     end
     local dialog = profileDialog
     dialog.mode, dialog.submit = mode, submit
-    dialog.title:SetText(ns.ColorRet(title))
-    dialog.instructions:SetText(ns.ColorRet(text))
+    dialog.title:SetText(ns.FormatText(title))
+    dialog.instructions:SetText(ns.FormatText(text))
     dialog.editBox:SetText("")
     dialog.editBox:SetMultiLine(mode == "import")
     dialog.editBox:SetHeight(mode == "import" and 82 or 26)
@@ -1406,7 +1429,7 @@ local function ProfileSelector(parent, role, y, choices, choose)
         for index, name in ipairs(names) do
             local button = buttons[index]
             if not button then button = Button(list, "", 182, 0, -(index - 1) * 28); buttons[index] = button end
-            button:SetText(ns.ColorRet(name))
+            button:SetText(ns.FormatText(name))
             button:SetScript("OnClick", function() menu:Hide(); choose(name) end)
             button:Show()
         end
@@ -1425,12 +1448,12 @@ local function BuildProfiles(page, content)
     local active = ProfileSelector(content, "active", -4, function() return ns.Profiles.List() end,
         function(name)
             local ok, message = ns.Profiles.Activate(name)
-            status:SetText(ns.ColorRet(ok and "Active profile: " .. message or message))
+            status:SetText(ns.FormatText(ok and "Active profile: " .. message or message))
         end)
     local create = Button(content, "Create New", 150, 308, -46, function()
         ProfileDialog("create", "Create a new profile", "Enter a name for the new profile:", function(name)
             local ok, result = ns.Profiles.Create(name)
-            if ok then status:SetText(ns.ColorRet("Created profile: " .. result)) end
+            if ok then status:SetText(ns.FormatText("Created profile: " .. result)) end
             return ok, result
         end)
     end)
@@ -1440,7 +1463,7 @@ local function BuildProfiles(page, content)
     local import = Button(content, "Import", 106, 352, -144, function()
         ProfileDialog("import", "Import a profile", "Paste a ret_Cinema profile export, then click Import.", function(text)
             local ok, result = ns.Profiles.Import(text)
-            if ok then status:SetText(ns.ColorRet("Imported profile: " .. result)) end
+            if ok then status:SetText(ns.FormatText("Imported profile: " .. result)) end
             return ok, result
         end)
     end)
@@ -1448,7 +1471,7 @@ local function BuildProfiles(page, content)
     local source
     local copySelector
     copySelector = ProfileSelector(content, "copy", -194, function() return ns.Profiles.List(true) end,
-        function(name) source = name; copySelector:SetText(ns.ColorRet(name)) end)
+        function(name) source = name; copySelector:SetText(ns.FormatText(name)) end)
     local copy = Button(content, "Copy", 106, 352, -232, function()
         if not source then status:SetText("Select a profile to copy."); return end
         local ok, message = ns.Profiles.CopyFrom(source)
@@ -1459,13 +1482,13 @@ local function BuildProfiles(page, content)
     local deletion
     local deleteSelector
     deleteSelector = ProfileSelector(content, "delete", -334, function() return ns.Profiles.List(true) end,
-        function(name) deletion = name; deleteSelector:SetText(ns.ColorRet(name)) end)
+        function(name) deletion = name; deleteSelector:SetText(ns.FormatText(name)) end)
     local delete = Button(content, "Delete", 106, 352, -372, function()
         if not deletion then status:SetText("Select a profile to delete."); return end
         local target = deletion
         ProfileDialog("delete", "Delete profile", "Delete '" .. target .. "'? This cannot be undone.", function()
             local ok, message = ns.Profiles.Delete(target)
-            if ok then status:SetText(ns.ColorRet("Deleted profile: " .. message)) end
+            if ok then status:SetText(ns.FormatText("Deleted profile: " .. message)) end
             return ok, message
         end)
     end)
@@ -1474,7 +1497,7 @@ local function BuildProfiles(page, content)
             page:RegisterEvent("PLAYER_REGEN_DISABLED")
             page:RegisterEvent("PLAYER_REGEN_ENABLED")
         end
-        active:SetText(ns.ColorRet(ns.Profiles.Current()))
+        active:SetText(ns.FormatText(ns.Profiles.Current()))
         active.menu:Hide(); copySelector.menu:Hide(); deleteSelector.menu:Hide()
         source, deletion = nil, nil
         copySelector:SetText("Select a profile...")
@@ -1519,14 +1542,12 @@ local function OpenGoOffline()
             dialog.controls[#dialog.controls + 1] = control
         end
         dialog.refresh = function() for _, control in ipairs(dialog.controls) do control.refresh(ns.IsEffectEnabled("letterbox")) end end
-        Button(dialog, CLOSE, 100, 260, -508, function() dialog:Hide() end)
     end
     goOfflineDialog.refresh(); goOfflineDialog:Show()
 end
 local function BuildTrigger(page, content)
     local selectors = {}
-    LargeYellow(Label(content, "RP Actions:", "GameFontNormal", 0, 0), 1.5)
-    local box = FramedBox(content, -40, 350)
+    local box = FramedBox(content, 0, 350)
     local moveColumn = CreateFrame("Frame", nil, box)
     local stayColumn = CreateFrame("Frame", nil, box)
     page.moveColumn, page.stayColumn, page.roleplayBox = moveColumn, stayColumn, box
@@ -1545,29 +1566,48 @@ local function BuildTrigger(page, content)
         end
         return choices
     end
-    local warning = "|cffff8000Warning!|r "
-    local walking = Checkbox(moveColumn, "Walk", -4, -36, function(self) ns.SetTrigger(self:GetChecked()) end)
-    Tooltip(walking, warning .. "Apply the selected Lens in walk mode, including while stationary. Its Lens buttons cannot change the RP action. Switch Run/Walk to end it.")
-    local synchronize = Checkbox(moveColumn, "Walking mode is currently enabled", -4, 0, function(self) ns.SyncWalkingMode(self:GetChecked()) end)
-    local font, size, flags = synchronize.label:GetFont(); synchronize.label:SetFont(font, size * 0.85, flags)
-    synchronize.label:SetTextColor(0.5, 0.5, 0.5); synchronize.label:SetWordWrap(true)
-    synchronize.defaultHint = "Automatic detection"
-    Tooltip(synchronize, warning .. "Synchronize LiteRP with your current game movement mode. This does not switch the character's mode. Move once to detect it automatically, or match walk/run while stationary.")
-    local status = Label(moveColumn, "", "GameFontHighlightSmall", 0, 0)
-    status:SetTextColor(0.5, 0.5, 0.5); status:SetWordWrap(true)
-    local poseChecks = {}
-    for _, kind in ipairs({ "Sit", "Lay", "Lean" }) do
-        local selectedKind = kind
-        poseChecks[kind] = Checkbox(stayColumn, kind, -4, 0, function(self) ns.SetRoleplayOption("roleplay" .. selectedKind, self:GetChecked()) end)
+    local walking, synchronize, status, logout, logoutButton
+    local poseChecks, actionRules = {}, {}
+    local function EnsureWalk()
+        if walking then return end
+        walking = Checkbox(moveColumn, "Walk", -4, -36, function(self) ns.SetTrigger(self:GetChecked()) end)
+        Tooltip(walking, ns.ChatText("SYSTEM", "Warning!") .. " Apply the selected Lens in walk mode, including while stationary. Its Lens buttons cannot change the RP action. Switch Run/Walk to end it.")
+        synchronize = Checkbox(moveColumn, "Walking mode is currently enabled", -4, 0, function(self) ns.SyncWalkingMode(self:GetChecked()) end)
+        local font, size, flags = synchronize.label:GetFont(); synchronize.label:SetFont(font, size * 0.85, flags)
+        synchronize.label:SetTextColor(0.5, 0.5, 0.5); synchronize.label:SetWordWrap(true)
+        synchronize.defaultHint = "Automatic detection"
+        Tooltip(synchronize, ns.ChatText("SYSTEM", "Warning!") .. " Synchronize LiteRP with your current game movement mode. This does not switch the character's mode. Move once to detect it automatically, or match walk/run while stationary.")
+        status = Label(moveColumn, "", "GameFontHighlightSmall", 0, 0)
+        status:SetTextColor(0.5, 0.5, 0.5); status:SetWordWrap(true)
+    end
+    local function EnsurePose(kind)
+        if poseChecks[kind] then return end
+        poseChecks[kind] = Checkbox(stayColumn, kind, -4, 0, function(self) ns.SetRoleplayOption("roleplay" .. kind, self:GetChecked()) end)
         Tooltip(poseChecks[kind], "Apply this action's Lens while stationary. Lens buttons cannot change its Effects. Moving or standing up ends the action.")
     end
-    local logout = Checkbox(stayColumn, "GoOffline", -4, 0, function(self) ns.SetRoleplayOption("roleplayLogout", self:GetChecked()) end)
-    logout.frameRole = "goOfflineEnabled"
-    local logoutButton = GearButton(stayColumn, 0, 0, OpenGoOffline)
-    logoutButton.frameRole = "goOfflineSettings"
-    logoutButton:ClearAllPoints(); logoutButton:SetPoint("LEFT", logout.label, "RIGHT", 8, 0)
-    Tooltip(logout, "Apply a Lens during the logout countdown. GoOffline's Letterbox animation takes priority over that Lens's animation. Cancel logout to end the action.")
-    Tooltip(logoutButton, "Configure GoOffline's bar heights and animation stages.")
+    local function EnsureLogout()
+        if logout then return end
+        logout = Checkbox(stayColumn, "GoOffline", -4, 0, function(self) ns.SetRoleplayOption("roleplayLogout", self:GetChecked()) end)
+        logout.frameRole = "goOfflineEnabled"
+        logoutButton = GearButton(stayColumn, 0, 0, OpenGoOffline)
+        logoutButton.frameRole = "goOfflineSettings"
+        logoutButton:ClearAllPoints(); logoutButton:SetPoint("LEFT", logout.label, "RIGHT", 8, 0)
+        Tooltip(logout, "Apply a Lens during the logout countdown. GoOffline's Letterbox animation takes priority over that Lens's animation. Cancel logout to end the action.")
+        Tooltip(logoutButton, "Configure GoOffline's bar heights and animation stages.")
+    end
+    local function ActionRule(kind, y, shown)
+        local rule = actionRules[kind]
+        if shown and not rule then
+            rule = stayColumn:CreateTexture(nil, "ARTWORK")
+            rule:SetColorTexture(0.6, 0.6, 0.6, 0.3); rule:SetHeight(1)
+            actionRules[kind] = rule
+        end
+        if rule then
+            rule:SetShown(shown)
+            rule:SetPoint("TOPLEFT", 0, y + 9); rule:SetPoint("TOPRIGHT", -8, y + 9)
+        end
+    end
+    page.actionRules = actionRules
     local function TargetSelector(kind)
         if selectors[kind] then return selectors[kind] end
         local column = kind == "Walk" and moveColumn or stayColumn
@@ -1585,10 +1625,15 @@ local function BuildTrigger(page, content)
         box:SetWidth(content:GetWidth())
         moveColumn:SetPoint("TOPLEFT", 12, -12); moveColumn:SetWidth(width)
         stayColumn:SetPoint("TOPLEFT", width + 28, -12); stayColumn:SetWidth(width)
-        synchronize.label:SetWidth(width - 30); status:SetWidth(width - 12)
-        walking:SetChecked(ns.db.triggerEnabled); walking:SetEnabled(ns.TriggerAvailable() or ns.db.triggerEnabled)
-        local moveY = -74
-        if ns.db.triggerEnabled then
+        local walkVisible = ns.RoleplayActionVisible("Walk")
+        if walkVisible then EnsureWalk() end
+        if walking then
+            walking:SetShown(walkVisible)
+            walking:SetChecked(ns.db.triggerEnabled); walking:SetEnabled(ns.TriggerAvailable() or ns.db.triggerEnabled)
+            synchronize.label:SetWidth(width - 30); status:SetWidth(width - 12)
+        end
+        local moveY = walkVisible and -74 or -36
+        if walkVisible and ns.db.triggerEnabled then
             local selector = TargetSelector("Walk"); selector:SetWidth(width - 16); selector:SetPoint("TOPLEFT", 12, moveY)
             selector:SetText(ns.GetTriggerTargetName(ns.db.triggerTarget)); selector:Show(); moveY = moveY - 38
             synchronize:SetPoint("TOPLEFT", -4, moveY); synchronize:SetChecked(ns.GetWalkingMode() == true); synchronize:Show()
@@ -1599,32 +1644,41 @@ local function BuildTrigger(page, content)
             status:SetPoint("TOPLEFT", 0, moveY); status:Show(); moveY = moveY - math.max(50, status:GetStringHeight() + 18)
         else
             if selectors.Walk then selectors.Walk:Hide() end
-            synchronize:Hide(); status:Hide()
+            if synchronize then synchronize:Hide(); status:Hide() end
         end
-        local stayY = -36
-        for _, kind in ipairs({ "Sit", "Lay", "Lean" }) do
-            local check = poseChecks[kind]
-            check:SetPoint("TOPLEFT", -4, stayY); check:SetChecked(ns.db["roleplay" .. kind]); check:SetEnabled(ns.PostureAvailable()); stayY = stayY - 36
-            if ns.db["roleplay" .. kind] then
-                local selector = TargetSelector(kind); selector:SetWidth(width - 16); selector:SetPoint("TOPLEFT", 12, stayY)
-                selector:SetText(ns.GetTriggerTargetName(ns.db["roleplay" .. kind .. "Target"])); selector:Show(); stayY = stayY - 38
+        local stayY, previous = -36, false
+        for _, kind in ipairs({ "Sit", "Lay", "Lean", "Logout" }) do
+            local visible = ns.RoleplayActionVisible(kind)
+            if visible then
+                if kind == "Logout" then EnsureLogout() else EnsurePose(kind) end
+            end
+            local check = kind == "Logout" and logout or poseChecks[kind]
+            if check then check:SetShown(visible) end
+            ActionRule(kind, stayY, visible and previous)
+            if visible then
+                local enabled = ns.RoleplayActionEnabled(kind)
+                check:SetPoint("TOPLEFT", -4, stayY); check:SetChecked(enabled)
+                check:SetEnabled(kind == "Logout" and ns.IsEffectEnabled("letterbox") or kind ~= "Logout" and ns.PostureAvailable())
+                stayY = stayY - 36
+                if enabled then
+                    local selector = TargetSelector(kind); selector:SetWidth(width - 16); selector:SetPoint("TOPLEFT", 12, stayY)
+                    selector:SetText(ns.GetTriggerTargetName(ns.db["roleplay" .. kind .. "Target"])); selector:Show(); stayY = stayY - 38
+                elseif selectors[kind] then selectors[kind]:Hide() end
+                stayY, previous = stayY - 18, true
             elseif selectors[kind] then selectors[kind]:Hide() end
+            if kind == "Logout" and logout then
+                local active = visible and ns.db.roleplayLogout
+                logout.label:SetTextColor(active and 1 or 0.5, active and 1 or 0.5, active and 1 or 0.5)
+                logoutButton:SetShown(active); logoutButton:SetEnabled(ns.IsEffectEnabled("letterbox"))
+            end
         end
-        stayY = stayY - 12
-        logout:SetPoint("TOPLEFT", -4, stayY); logout:SetChecked(ns.db.roleplayLogout); logout:SetEnabled(ns.IsEffectEnabled("letterbox"))
-        logout.label:SetTextColor(ns.db.roleplayLogout and 1 or 0.5, ns.db.roleplayLogout and 1 or 0.5, ns.db.roleplayLogout and 1 or 0.5)
-        logoutButton:SetShown(ns.db.roleplayLogout); logoutButton:SetEnabled(ns.IsEffectEnabled("letterbox")); stayY = stayY - 36
-        if ns.db.roleplayLogout then
-            local selector = TargetSelector("Logout"); selector:SetWidth(width - 16); selector:SetPoint("TOPLEFT", 12, stayY)
-            selector:SetText(ns.GetTriggerTargetName(ns.db.roleplayLogoutTarget)); selector:Show(); stayY = stayY - 38
-        elseif selectors.Logout then selectors.Logout:Hide() end
         local height = math.max(180, -moveY, -stayY)
-        moveColumn:SetHeight(height); stayColumn:SetHeight(height); box:SetHeight(height + 24); content:SetHeight(height + 84)
+        moveColumn:SetHeight(height); stayColumn:SetHeight(height); box:SetHeight(height + 24); content:SetHeight(height + 44)
     end
     ns.RefreshTriggerSettings = function()
         if page:IsShown() then page.refresh() end
         if goOfflineDialog and goOfflineDialog:IsShown() then
-            if not ns.Advanced("roleplay") or not ns.db.roleplayLogout then goOfflineDialog:Hide() else goOfflineDialog.refresh() end
+            if not ns.RoleplayActionEnabled("Logout") then goOfflineDialog:Hide() else goOfflineDialog.refresh() end
         end
     end
     content:HookScript("OnSizeChanged", function() if page:IsShown() then page.refresh() end end)
@@ -1648,8 +1702,8 @@ local function OpenWishBoard()
             { "FOV", "Available", "Choose permanent, individual Lens and per-Combined Lens field-of-view settings." },
             { "SmoothMotion", "Under consideration", "Explore smoother camera movement.", true },
             { "Custom Letterbox transparency", "Available", "Enable this option in Advanced Cinematographer to adjust bar opacity." },
-            { "Custom Letterbox animation speed", "Available", "Enable this option in Advanced Cinematographer to choose transition duration." },
-            { "Custom CameraShift animation speed", "Available", "Enable this option in Advanced Cinematographer to choose shoulder-offset transition duration." },
+            { "Custom Letterbox animation duration", "Available", "Enable this option in Advanced Cinematographer to choose transition duration." },
+            { "Custom CameraShift animation duration", "Available", "Enable this option in Advanced Cinematographer to choose shoulder-offset transition duration." },
             { "LiteRP: Walk", "Experimental", "Walk applies a Lens while walk mode is enabled. LiteRP is available through Advanced Cinematographer." },
             { "LiteRP: poses and logout", "Experimental", "Stationary actions and logout can apply a Lens. RP actions protect their Effects from Lens buttons." },
             { "Improve descriptions and tooltips", "Planned", "Make Effect descriptions and option tooltips more precise." },
@@ -1664,15 +1718,15 @@ local function OpenWishBoard()
         ideaFont:SetFontObject("GameFontHighlight")
         ideaFont:SetTextColor(1, 0.5, 0)
         for index, idea in ipairs(ideas) do
-            local row = Button(dialog, idea[1], 290, 20, -138 - (index - 1) * 28, function() details:SetText(idea[3]) end)
+            local row = Button(dialog, idea[1], 290, 20, -138 - (index - 1) * 28, function() details:SetText(ns.FormatText(idea[3])) end)
             local font = idea[4] and "GameFontDisable" or idea[2] == "Available" and "GameFontNormal" or ideaFont
             row:SetNormalFontObject(font)
             row:SetHighlightFontObject(font)
             row:GetFontString():SetTextColor(idea[4] and 0.5 or 1, idea[4] and 0.5 or idea[2] == "Available" and 0.82 or 0.5, idea[4] and 0.5 or 0)
             local status = Label(dialog, idea[2], "GameFontHighlightSmall", 340, -144 - (index - 1) * 28)
-            status:SetTextColor(idea[2] == "Available" and 0.6 or 1, idea[2] == "Available" and 1 or 0.5, 0)
+            if idea[2] == "Experimental" then status:SetTextColor(ns.ChatColor("RAID_LEADER"))
+            else status:SetTextColor(idea[2] == "Available" and 0.6 or 1, idea[2] == "Available" and 1 or 0.5, 0) end
         end
-        Button(dialog, CLOSE, 100, 240, -486, function() dialog:Hide() end)
     end
     wishDialog:Show()
 end
@@ -1709,10 +1763,10 @@ end
 
 local function ChildPanel(name, builder, info, main)
     local child = CreateFrame("Frame", main and "RetCinemaSettingsPanel" or "RetCinema" .. name:gsub("%W", "") .. "Panel", UIParent)
-    child.name = main and ns.title or name == "Lens" and "|cff40c7ebLens|r" or name == "LiteRP" and "|cffff99ccLiteRP|r" or name
+    child.name = main and ns.title or name == "Lens" and "|cff40c7ebLens|r" or name == "LiteRP" and ns.ChatText("EMOTE", "LiteRP") or name
     child.pageId = main and "main" or name:lower()
     child:Hide()
-    local initialized, description
+    local initialized, description, hint
     child:SetScript("OnShow", function()
         if name == "Lens" and not ns.HasLensEffects() then child:Hide(); return end
         if not initialized then
@@ -1724,12 +1778,13 @@ local function ChildPanel(name, builder, info, main)
                 description:ClearAllPoints()
                 description:SetPoint("TOPLEFT", 20, -76)
                 description:SetPoint("TOPRIGHT", -38, -76)
-                local hint = Label(child, info().hint, "GameFontNormal", 0, 0)
+                hint = Label(child, (info().hint or ""):gsub("%s+$", ""), "GameFontNormal", 0, 0)
                 hint:ClearAllPoints()
                 hint:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -10)
                 hint:SetPoint("TOPRIGHT", description, "BOTTOMRIGHT", 0, -10)
                 hint:SetWordWrap(true)
-                scroll:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -28)
+                local _, lineHeight = hint:GetFont()
+                scroll:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, name == "LiteRP" and -lineHeight or -28)
             else scroll:SetPoint("TOPLEFT", 20, -76) end
             scroll:SetPoint("BOTTOMRIGHT", -38, 20)
             local content = CreateFrame("Frame", nil, scroll)
@@ -1740,9 +1795,11 @@ local function ChildPanel(name, builder, info, main)
                 if child.layoutEffects then child.layoutEffects() end
             end)
             child.content = content
+            child.hint, child.scroll = hint, scroll
             builder(child, content)
         end
-        if description then description:SetText(ns.ColorRet(info().description)) end
+        if description then description:SetText(ns.FormatText(info().description)) end
+        if hint then hint:SetText(ns.FormatText((info().hint or ""):gsub("%s+$", ""))) end
         if child.refresh then child.refresh() end
     end)
     return child
@@ -1809,6 +1866,25 @@ local function UpdateLensCategory()
         OpenChild("main")
     end
 end
+local function ColorRoleplayNavigation()
+    local list = SettingsPanel and SettingsPanel.CategoryList
+    local scroll = list and list.ScrollBox
+    if not scroll or not ScrollUtil or not ScrollUtil.AddInitializedFrameCallback then return end
+    local function Paint(frame, initializer)
+        initializer = initializer or (frame.GetElementData and frame:GetElementData())
+        if not frame.Label or not initializer or not initializer.data or initializer.data.category ~= ns.settingsCategories.literp then return end
+        frame.Label:SetText(ns.ChatText("EMOTE", "LiteRP"))
+        frame.Label:SetTextColor(ns.ChatColor("EMOTE"))
+        -- Blizzard reapplies font objects on hover/selection. Repaint this
+        -- registered category after those changes, including recycled rows.
+        if not frame.retCinemaColorHook and frame.UpdateStateInternal and hooksecurefunc then
+            frame.retCinemaColorHook = true
+            hooksecurefunc(frame, "UpdateStateInternal", function(self) Paint(self) end)
+        end
+    end
+    ScrollUtil.AddInitializedFrameCallback(scroll, function(_, frame, initializer) Paint(frame, initializer) end, panel)
+    if scroll.ForEachFrame then scroll:ForEachFrame(Paint) end
+end
 function ns.RegisterSettings()
     panel = ChildPanel("ret_Cinema", builders.general, function()
         return { description = ns.GetDescription(), hint = ns.generalHint }
@@ -1823,7 +1899,7 @@ function ns.RegisterSettings()
     end)
     lensPanel = ChildPanel("Lens", builders.lens, function() return ns.lens end)
     roleplayPanel = ChildPanel("LiteRP", BuildTrigger, function()
-        return { description = "Bring your Lens into |cffff99ccLiteRP|r.", hint = "Keep a Lens in walk mode, choose a different Lens for each Stay action, or customize GoOffline. Lens buttons cannot change Effects controlled by an active RP action." }
+        return { description = "Bring your Lens into RP Actions", hint = "Keep a Lens in walk mode, choose a different Lens for each Stay action, or customize GoOffline. Lens buttons cannot change Effects controlled by an active RP action." }
     end)
     local profiles = ChildPanel("Profiles", BuildProfiles)
     local support = ChildPanel("Support", BuildSupport)
@@ -1861,6 +1937,7 @@ function ns.RegisterSettings()
         ns.RefreshCombinedSettings()
         if ns.RefreshTriggerSettings then ns.RefreshTriggerSettings() end
     end
+    ColorRoleplayNavigation()
     UpdateLensCategory()
     UpdateRoleplayCategory()
 end

@@ -2,7 +2,7 @@
 ## Title: |cff9acd32ret_|r|cff40c7ebCinema|r
 ## Notes: Addon for your memorable photographic experience!
 ## Author: retRodya
-## Version: 1.1.11
+## Version: 1.1.13
 ## Category: UI
 ## IconTexture: 136034
 ## AddonCompartmentFunc: RetCinema_OpenSettings

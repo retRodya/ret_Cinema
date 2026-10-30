@@ -2,6 +2,7 @@
 -- WoW API stand-ins exercise behavior; rendering still needs an in-game check.
 local frames, bindings, bindingOrder = {}, {}, {}
 local combat, modifiers, saved = false, {}, 0
+ChatTypeInfo = { RAID_LEADER = { r = 1, g = 0.28, b = 0.04 }, SYSTEM = { r = 1, g = 1, b = 0 }, EMOTE = { r = 1, g = 0.5, b = 0.25 } }
 local focusedFrame
 local Frame = {}
 Frame.__index = Frame
@@ -49,6 +50,11 @@ function Frame:GetHeight() return self.height or 1000 end
 function Frame:SetScale(scale) self.scale = scale end
 function Frame:SetAlpha(alpha) self.alpha = alpha end
 function Frame:GetAlpha() return self.alpha or 1 end
+function Frame:SetIgnoreParentAlpha(ignore) self.ignoreParentAlpha = ignore end
+function Frame:IsIgnoringParentAlpha() return self.ignoreParentAlpha == true end
+function Frame:GetEffectiveAlpha()
+    return self:GetAlpha() * (not self.ignoreParentAlpha and self.parent and self.parent:GetEffectiveAlpha() or 1)
+end
 function Frame:SetBackdropColor(r, g, b, alpha) self.backdropColor = { r, g, b, alpha } end
 function Frame:GetScale() return self.scale or 1 end
 function Frame:GetFrameLevel() return self.level or 1 end
@@ -138,16 +144,19 @@ GameTooltip = CreateFrame("Frame")
 CLOSE, SlashCmdList, StaticPopupDialogs = "Close", {}, {}
 local lastPopup
 local lastPopupName
+local popupFrames = {}
 local now = 0
 function GetTime() return now end
 function StaticPopup_Show(name)
-    lastPopup = CreateFrame("Frame")
+    lastPopup = CreateFrame("Frame", nil, UIParent)
     lastPopupName = name
+    popupFrames[name] = lastPopup
     lastPopup.editBox = CreateFrame("EditBox", nil, lastPopup)
     if StaticPopupDialogs[name] and StaticPopupDialogs[name].OnShow then StaticPopupDialogs[name].OnShow(lastPopup) end
     return lastPopup
 end
 function StaticPopup_Hide(name) if name == lastPopupName then lastPopup:Hide() end end
+function StaticPopup_FindVisible(name) local frame = popupFrames[name]; return frame and frame:IsShown() and frame or nil end
 local secureHookCalls = {}
 local nativeWalkCalls = 0
 local walkMode, playerSpeed, playerRunSpeed = false, 0, 7
@@ -227,6 +236,12 @@ Settings = {
         settingsCategories[id].panel:Show()
     end,
 }
+local navScroll = { callbacks = {} }
+function navScroll:ForEachFrame() end
+SettingsPanel = { CategoryList = { ScrollBox = navScroll, CreateCategories = noop } }
+ScrollUtil = { AddInitializedFrameCallback = function(scroll, callback, owner)
+    scroll.callbacks[#scroll.callbacks + 1] = { callback = callback, owner = owner }
+end }
 
 local cvars = {
     UnitNameOwn = "1", UnitNameNPC = "1", UnitNameHostleNPC = "0",
@@ -238,7 +253,10 @@ local cvars = {
     test_cameraTargetFocusEnemyEnable = "0", test_cameraTargetFocusInteractEnable = "1", CameraFollowTargetCombat = "1",
 }
 local logoutCancelCalls = 0
-function CancelLogout() logoutCancelCalls = logoutCancelCalls + 1 end
+function CancelLogout()
+    logoutCancelCalls = logoutCancelCalls + 1
+    for _, name in ipairs({ "CAMP", "QUIT" }) do if popupFrames[name] then popupFrames[name]:Hide() end end
+end
 function GetCameraFOVDefaults() return 90, 60, 90 end
 function GetCVar(name) return cvars[name] end
 function SetCVar(name, value)
@@ -280,7 +298,8 @@ local function finishEffects()
     local frame = RetCinemaLetterbox
     if frame and frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame, 1) end
 end
-assert(ns.icon == 136034 and not ns.db.enableAnimation and ns.db.letterboxHeight == 10)
+assert(ns.icon == 136034 and not ns.db.enableAnimation and ns.db.letterboxHeight == 5 and ns.db.cameraOffset == 1)
+ns.SetLetterboxHeight(10); ns.SetCameraOffset(1.5)
 assert(not ns.db.combinedAsEsc and not ns.db.showSecondBinding)
 assert(not ns.db.triggerEnabled and not secureHookCalls.ToggleRun)
 assert(not ns.db.advancedCinematographer and not ns.Advanced("secondButton") and ns.GetCombinedCount() == 1 and not RetCinemaRoleplayEvents)
@@ -298,14 +317,14 @@ local function step(delta)
     assert(bars.scripts.OnUpdate, "Expected an active animation")(bars, delta)
 end
 assert(bars:IsShown() and top.height < 1)
-step(0.15)
+step(0.25)
 assert(math.abs(top.height - 50) < 0.001 and top.height == bottom.height)
 local halfway = top.height
 RetCinema_ToggleLetterbox()
 assert(top.height == halfway, "Reversing must not jump")
 step(0.075)
 assert(top.height > 0 and top.height < halfway)
-step(0.2)
+step(0.25)
 assert(not bars:IsShown() and not bars.scripts.OnUpdate)
 RetCinema_ToggleLetterbox()
 step(1)
@@ -360,7 +379,7 @@ assert(ns.db.cameraConsent and ns.IsEffectEnabled("camerashift"))
 RetCinema_ToggleCameraShift()
 assert(cvars.test_cameraOverShoulder == "-2", "Starting a camera transition must not jump")
 assert(RetCinemaCameraAnimator and RetCinemaCameraAnimator.scripts.OnUpdate)
-RetCinemaCameraAnimator.scripts.OnUpdate(RetCinemaCameraAnimator, 0.175)
+RetCinemaCameraAnimator.scripts.OnUpdate(RetCinemaCameraAnimator, 0.25)
 assert(math.abs(tonumber(cvars.test_cameraOverShoulder) + 0.25) < 0.001)
 finishEffects()
 assert(ns.IsCameraShiftActive() and cvars.test_cameraOverShoulder == "1.5")
@@ -465,7 +484,7 @@ assert(not bars:IsShown())
 ns.SetCombinedAction("RETCINEMA_CAMERA", true)
 -- Reversing unfinished camera transitions remains continuous and retains the original baseline.
 RetCinema_ToggleCameraShift()
-RetCinemaCameraAnimator.scripts.OnUpdate(RetCinemaCameraAnimator, 0.175)
+RetCinemaCameraAnimator.scripts.OnUpdate(RetCinemaCameraAnimator, 0.25)
 local interruptedOffset = cvars.test_cameraOverShoulder
 RetCinema_ToggleCameraShift()
 assert(cvars.test_cameraOverShoulder == interruptedOffset)
@@ -516,7 +535,7 @@ assert(cvars.test_cameraOverShoulder == "1.5" and RetCinemaCameraAnimator.script
 local returning = RetCinemaCameraAnimator.scripts.OnUpdate
 pressEscape()
 assert(RetCinemaCameraAnimator.scripts.OnUpdate == returning, "Repeated Escape must not restart the return")
-RetCinemaCameraAnimator.scripts.OnUpdate(RetCinemaCameraAnimator, 0.175)
+RetCinemaCameraAnimator.scripts.OnUpdate(RetCinemaCameraAnimator, 0.25)
 assert(math.abs(tonumber(cvars.test_cameraOverShoulder) + 0.25) < 0.001)
 finishEffects()
 assert(not bars:IsShown() and cvars.test_cameraOverShoulder == "-2" and cvars.UnitNameNPC == "1")
@@ -775,7 +794,7 @@ do
     local button = find(function(f) return f.kind == "Button" and f.text == "Advanced Cinematographer" end)
     assert(button:IsShown() and not button.enabled and not RetCinemaAdvancedDialog)
     advanced.scripts.OnEnter(advanced)
-    assert(GameTooltip:GetText() == "Allow access to additional and |cffff8000Experimental|r options.\nDefault: Unchecked")
+    assert(GameTooltip:GetText() == "Allow access to hidden, additional and " .. ns.ChatText("RAID_LEADER", "Experimental") .. " options.\n\nDefault: Unchecked")
     advanced:SetChecked(true); click(advanced)
     assert(ns.db.advancedCinematographer and button:IsShown() and not advanced.label:IsShown())
     click(button)
@@ -785,20 +804,24 @@ do
     assert(dialog.groups.HideUI and not dialog.checks.hideInterface, "Effect groups must disclose lazily")
     for _, name in ipairs({ "HideUI", "Letterbox", "CameraShift", "FOV", "Lens" }) do click(dialog.groups[name]) end
     local lite = dialog.groups.LiteRP
-    assert(lite.label:GetText() == "|cffff8000[Experimental]|r |cffff99ccLiteRP|r")
+    assert(lite.label:GetText() == ns.ChatText("RAID_LEADER", "[Experimental]") .. " " .. ns.ChatText("EMOTE", "LiteRP"))
     lite:SetChecked(true); click(lite)
     assert(ns.Advanced("roleplay") and dialog.groups.Move and dialog.groups.Stay and not dialog.checks.roleplayDo and not dialog.checks.roleplayStay)
     assert(dialog.groups.Move.label.color[2] == 0.82 and dialog.groups.Stay.label.color[2] == 0.82)
     click(dialog.groups.Move)
-    assert(dialog.checks.triggerEnabled and not ns.db.triggerEnabled)
+    assert(dialog.checks.rpWalk and not ns.db.triggerEnabled)
+    dialog.checks.rpWalk:SetChecked(true); click(dialog.checks.rpWalk)
+    assert(ns.RoleplayActionVisible("Walk") and not ns.db.triggerEnabled, "Advanced must disclose Walk without enabling it")
+    click(dialog.groups.Stay)
+    for _, id in ipairs({ "rpSit", "rpLay", "rpLean", "rpLogout" }) do dialog.checks[id]:SetChecked(true); click(dialog.checks[id]) end
     assert(dialog.groups.FOV:GetText() == "-" and dialog.groups.FOV.label.color[2] == 0.82)
     local count = 0
     for _, option in ipairs(ns.advancedOptions) do assert(dialog.checks[option.id]); count = count + 1 end
     assert(count == #ns.advancedOptions and dialog.checks.fovSpeed:IsShown())
     dialog.checks.hideInterface:SetChecked(true); click(dialog.checks.hideInterface)
-    assert(not ns.EffectSettings("hideui").hideInterface, "Don't hide must activate an exception to the normal hide behavior")
+    assert(not ns.EffectSettings("hideui").hideInterface, "Revealing an optional control must not check its actual setting")
     dialog.checks.hideInterface.scripts.OnEnter(dialog.checks.hideInterface)
-    assert(GameTooltip:GetText():match("\nDefault: Unchecked$"))
+    assert(GameTooltip:GetText():match("\n\nDefault: Unchecked$"))
     click(dialog.groups.Effect)
     assert(not dialog.checks.hideInterface:IsShown() and ns.Advanced("hideInterface"), "Collapsing must preserve enabled options")
     lite:SetChecked(false); click(lite)
@@ -819,10 +842,10 @@ end
 
 effectTab(1)
 local hideContent = page("hideui").content
-local hidePermanent = checkbox(hideContent, "Permanent Hide UI")
+local hidePermanent = checkbox(hideContent, "Permanent HideUI")
 assert(not hidePermanent.enabled and not hidePermanent.scripts.OnClick)
 hidePermanent.scripts.OnEnter(hidePermanent)
-assert(GameTooltip:GetText() == "Not sure yet you really need this :)\nDefault: Unchecked")
+assert(GameTooltip:GetText() == "Not sure yet you really need this :)\n\nDefault: Unchecked")
 local hideApply = checkbox(hideContent, "Apply Effect to Lens")
 assert(hideApply:GetChecked())
 
@@ -948,7 +971,7 @@ assert(combined1.parent:GetHeight() == 114 and combined2:IsShown())
 assert(not hide2:IsShown() and combined1:GetFontString().color[1] == 0.5)
 assert(combinedBox.template == "BackdropTemplate")
 assert(not RetCinemaCombinedSettingsDialog)
-for _, button in ipairs({ hide1, letter1, camera1 }) do assert(button.parent.gear:IsShown() and not button.parent.extraContainer:IsShown()) end
+for _, button in ipairs({ hide1, letter1, camera1 }) do assert(button.parent.gears[1]:IsShown() and not button.parent.extraContainer:IsShown()) end
 assert(combinedBox.points.TOPLEFT[2] < camera1.parent.points.TOPLEFT[2] - camera1.parent:GetHeight())
 local escape = combined1.parent.escape
 assert(escape.label:GetText() == "Escape Button" and escape.points.TOPLEFT[2] < combined2.points.TOPLEFT[2] - combined2:GetHeight())
@@ -1051,7 +1074,7 @@ do
     for count = 2, 5 do
         click(add)
         assert(ns.GetCombinedCount() == count)
-        for _, frame in ipairs(frames) do assert(not (frame.action == ns.CombinedBinding(count) and frame.slot == 1), "Empty Combined Lens must remain unbuilt") end
+        assert(binding(ns.CombinedBinding(count), 1).parent:IsShown(), "Plus must reveal an empty Combined Lens so it can become an Escape Button")
         local member = binding("RETCINEMA_HIDEUI", 1).parent.checks[count]
         member:SetChecked(true); click(member)
         local firstRow = binding("RETCINEMA_COMBINED", 1).parent
@@ -1065,7 +1088,7 @@ do
             local check = binding(action.binding, 1).parent.checks[count]
             assert(check and check:IsShown())
             check.scripts.OnEnter(check)
-            assert(GameTooltip:GetText() == "Add " .. _G["BINDING_NAME_" .. action.binding] .. " to Combined Lens " .. count .. "\nDefault: Unchecked")
+            assert(GameTooltip:GetText() == "Add " .. _G["BINDING_NAME_" .. action.binding] .. " to Combined Lens " .. count .. "\n\nDefault: Unchecked")
         end
     end
     assert(add:IsShown() and not add.enabled and not ns.AddCombinedLens())
@@ -1075,7 +1098,12 @@ do
         for index = 1, 5 do
             local check = row.checks[index]
             assert(check.points.TOPLEFT[2] == -1 and check.parent == row.extraContainer)
-            if index > 1 then assert(check.points.TOPLEFT[1] - row.checks[index - 1].points.TOPLEFT[1] == 28) end
+            local gear = row.gears[index]
+            assert(gear and gear.parent == row.extraContainer and gear.points.TOPLEFT[1] == check and gear.lensIndex == index)
+            if index > 1 then
+                assert(check.points.TOPLEFT[1] - row.checks[index - 1].points.TOPLEFT[1] == 52)
+                assert(row.membershipRules[index]:IsShown())
+            end
         end
     end
     for _, action in ipairs(ns.actions) do
@@ -1099,17 +1127,21 @@ do
     -- Per-Effect settings are built lazily and target additional lenses only.
     for _, button in ipairs({ hide1, letter1, camera1 }) do
         local row = button.parent
-        assert(row.gear:IsShown() and not row.extraContainer:IsShown() and row.gear.points.TOPLEFT[1] == row.checks[1])
+        assert(row.gears[1]:IsShown() and not row.extraContainer:IsShown() and row.gears[1].points.TOPLEFT[1] == row.checks[1])
     end
-    assert(not hide1.parent.gear.enabled, "Simple HideUI has no gear options")
+    assert(not hide1.parent.gears[1].enabled, "Simple HideUI has no gear options")
     for _, index in ipairs({ 2, 3 }) do
         ns.SetCombinedAction("RETCINEMA_LETTERBOX", true, index)
         ns.SetCombinedAction("RETCINEMA_CAMERA", true, index)
     end
     lensPage.refresh()
-    click(letter1.parent.gear)
+    click(letter1.parent.gears[2])
     local dialog = RetCinemaCombinedSettingsDialog
     assert(dialog:IsShown() and dialog.index == 2 and dialog.selector:GetText() == "Combined Lens 2")
+    click(letter1.parent.gears[3]); assert(dialog:IsShown() and dialog.index == 3)
+    click(letter1.parent.gears[2]); assert(dialog:IsShown() and dialog.index == 2)
+    click(letter1.parent.gears[2]); assert(not dialog:IsShown())
+    click(letter1.parent.gears[2]); assert(dialog:IsShown() and dialog.index == 2)
     assert(dialog.controls.letterbox and not dialog.controls.camerashift)
     assert(not dialog.inherit and not dialog.member and not dialog.noOptions and RetCinemaCombinedBarHeightSlider.enabled)
     local function chooseLens(index)
@@ -1134,13 +1166,13 @@ do
     RetCinemaCombinedBarHeightInput:SetFocus()
     RetCinemaCombinedBarHeightInput:SetText("8")
     chooseLens(3)
-    assert(ns.GetCombinedEffectValue(2, "letterbox") == 8 and ns.GetCombinedEffectValue(3, "letterbox") == 10)
+    assert(ns.GetCombinedEffectValue(2, "letterbox") == 8 and ns.GetCombinedEffectValue(3, "letterbox") == 5)
     chooseLens(2)
     RetCinemaCombinedBarHeightInput:SetText("7.5")
     RetCinemaCombinedBarHeightInput.scripts.OnEnterPressed(RetCinemaCombinedBarHeightInput)
     letter1.parent.checks[2]:SetChecked(true); click(letter1.parent.checks[2])
     assert(letter1.parent.checks[2]:GetChecked() and binding("RETCINEMA_COMBINED2", 1).parent.summary:GetText() == "Letterbox, CameraShift")
-    click(camera1.parent.gear)
+    click(camera1.parent.gears[2])
     RetCinemaCombinedCameraOffsetInput:SetText("3.4")
     RetCinemaCombinedCameraOffsetInput.scripts.OnEnterPressed(RetCinemaCombinedCameraOffsetInput)
     camera1.parent.checks[2]:SetChecked(true); click(camera1.parent.checks[2])
@@ -1149,7 +1181,7 @@ do
     RetCinemaCombinedCameraOffsetInput:SetText("-4")
     RetCinemaCombinedCameraOffsetInput.scripts.OnEnterPressed(RetCinemaCombinedCameraOffsetInput)
     camera1.parent.checks[3]:SetChecked(true); click(camera1.parent.checks[3])
-    click(letter1.parent.gear)
+    click(letter1.parent.gears[2])
     chooseLens(3)
     RetCinemaCombinedBarHeightInput:SetText("14")
     RetCinemaCombinedBarHeightInput.scripts.OnEnterPressed(RetCinemaCombinedBarHeightInput)
@@ -1157,21 +1189,21 @@ do
     ns.SetAdvanced("hideInterface", true)
     ns.SetCombinedAction("RETCINEMA_HIDEUI", true, 2)
     lensPage.refresh()
-    click(hide1.parent.gear)
+    click(hide1.parent.gears[2])
     assert(not dialog.noOptions and not dialog.member and not dialog.controls.letterbox:IsShown())
-    assert(checkbox(dialog.extraGroups.hideui, "Don't hide interface elements"))
+    assert(checkbox(dialog.extraGroups.hideui, "Hide interface elements"))
     assert(binding("RETCINEMA_COMBINED2", 1).parent.summary:GetText() == "HideUI, Letterbox, CameraShift")
     ns.SetCombinedAction("RETCINEMA_HIDEUI", false, 2); lensPage.refresh()
     ns.SetEffectSetting("hideInterface", true)
     assert(binding("RETCINEMA_COMBINED2", 1).parent.summary:GetText() == "Letterbox, CameraShift")
     ns.CloseCombinedSettings()
-    click(letter1.parent.gear)
+    click(letter1.parent.gears[2])
     chooseLens(2)
     RetCinemaCombinedBarHeightInput:SetFocus()
     RetCinemaCombinedBarHeightInput:SetText("13")
     ns.CloseCombinedSettings()
     assert(ns.GetCombinedEffectValue(2, "letterbox") == 7.5, "Closing must not commit a pending edit into another lens or profile")
-    click(letter1.parent.gear)
+    click(letter1.parent.gears[2])
     ns.SetEffectEnabled("letterbox", false)
     assert(not dialog:IsShown())
     ns.SetEffectEnabled("letterbox", true)
@@ -1252,10 +1284,11 @@ do
     assert(UIParent:IsShown() and bars:IsShown() and ns.IsCameraShiftActive())
     RetCinema_ToggleCombined(2); finishEffects()
     assert(not bars:IsShown() and not ns.IsCameraShiftActive() and cvars.test_cameraOverShoulder == "-2")
-    -- Overlap captures the state at each activation, rather than sharing one snapshot.
+    -- Identical HideUI settings remain hidden while either Lens owns the Effect.
+    ns.SetEffectSetting("hideInterface", true, false, 1); ns.SetEffectSetting("hideInterface", true, false, 3)
     RetCinema_ToggleCombined(1)
     RetCinema_ToggleCombined(3)
-    assert(UIParent:IsShown())
+    assert(not UIParent:IsShown(), "A second Lens applying HideUI must keep the UI hidden")
     RetCinema_ToggleCombined(3)
     assert(not UIParent:IsShown())
     RetCinema_ToggleCombined(1); finishEffects()
@@ -1309,7 +1342,8 @@ do
     assert(not UIParent:IsShown(), "The unnumbered command must activate the first lens")
     SlashCmdList.RETCINEMA("combinedlens1")
     assert(UIParent:IsShown(), "Both names must address the same first lens")
-    -- Version 4 round-trips all five lens configurations and their custom values.
+    -- Round-trip all five configurations with one selected Escape Button.
+    ns.SetCombinedExitAll(2, true)
     ns.SetCombinedEffectValue(2, "letterbox", 7.5)
     ns.SetCombinedEffectValue(2, "camerashift", 3.4)
     local originalName = ns.Profiles.Current()
@@ -1358,7 +1392,7 @@ do
     local version4OK, version4Name = ns.Profiles.Import(version4)
     assert(version4OK and ns.GetCombinedEffectValue(2, "letterbox") == 7.5 and ns.GetCombinedEffectValue(2, "camerashift") == 3.4)
     assert(ns.GetCombinedEffectValue(3, "letterbox") == ns.db.letterboxHeight and ns.db.lensValuesVersion == 1)
-    assert(not ns.db.extraCombinedLenses[2].customLetterbox and not ns.Profiles.Export():find("customLetterbox", 1, true))
+    assert(not ns.db.extraCombinedLenses[2].customLetterbox and not ns.Profiles.Export():find("customLetterbox=", 1, true))
     assert(ns.Profiles.Activate(originalName) and ns.Profiles.Delete(version4Name))
     assert(ns.SetTrigger(false, 0))
     SlashCmdList.RETCINEMA("combined")
@@ -1407,7 +1441,10 @@ do
     RetCinema_ToggleCombined(2); RetCinema_ToggleLetterbox(); RetCinema_ToggleCameraShift(); finishEffects()
     assert(top.height == 75 and cvars.test_cameraOverShoulder == "3.4" and ns.IsRoleplayActive(), "RP-owned Effects must ignore both their individual and Combined buttons")
     pressEscape(); finishEffects()
-    assert(top.height == 75 and ns.IsCameraShiftActive() and ns.IsRoleplayActive(), "Escape must not end Walk; only its RP action can release it")
+    assert(not bars:IsShown() and not ns.IsCameraShiftActive() and not ns.IsRoleplayActive() and not RetCinemaEscapeHandler.propagateKeyboard, "Escape must end Walk without opening the game menu")
+    RetCinemaRoleplayEvents.scripts.OnEvent(RetCinemaRoleplayEvents, "PLAYER_STARTED_MOVING"); flushTimers(); finishEffects()
+    assert(not ns.IsRoleplayActive(), "Walking movement must not immediately reactivate an Escape-dismissed Lens")
+    ns.SyncWalkingMode(true); finishEffects()
     Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
     local escape = binding("RETCINEMA_COMBINED2", 1).parent.escape
     assert(not escape.enabled)
@@ -1420,9 +1457,9 @@ do
     assert(not UIParent:IsShown() and ns.IsRoleplayActive() and top.height == 75 and ns.IsCameraShiftActive(), "Escape-enabled button must still apply its own Effects during Walk")
     RetCinema_ToggleCombined(1); finishEffects()
     assert(UIParent:IsShown() and ns.IsRoleplayActive() and top.height == 75 and ns.IsCameraShiftActive(), "Second press restores only that button's snapshot, leaving Walk active")
-    assert(ns.GetCombinedExitAll(1) and ns.GetCombinedExitAll(2), "LiteRP must preserve saved Escape Button preferences")
+    assert(ns.GetCombinedExitAll(1) and not ns.GetCombinedExitAll(2), "Selecting one Escape Button clears every other slot")
     for _, action in ipairs(ns.actions) do ns.SetCombinedAction(action.binding, savedActions[action.binding] == true, 1) end
-    ns.SetCombinedExitAll(1, savedExit)
+    ns.SetCombinedExitAll(1, savedExit); ns.SetCombinedExitAll(2, true)
     ToggleRun(); finishEffects()
     assert(not ns.IsRoleplayActive() and not bars:IsShown() and not ns.IsCameraShiftActive() and escape.enabled)
     RetCinema_ToggleCombined(2); finishEffects(); RetCinema_ToggleCombined(2); finishEffects()
@@ -1471,7 +1508,7 @@ do
     ns.SetLetterboxHeight(17.2)
     ns.SetMinimapButton(false)
     local exported = ns.Profiles.Export()
-    assert(exported:find("RETCINEMA_PROFILE:10|Photo|", 1, true) == 1)
+    assert(exported:find("RETCINEMA_PROFILE:11|Photo|", 1, true) == 1)
     assert(not exported:find("cameraConsent", 1, true) and not exported:find("cameraRestore", 1, true))
     assert(ns.Profiles.CopyFrom("Default"))
     assert(ns.Profiles.Current() == "Photo" and ns.db.permanentLetterbox and cvars.test_cameraOverShoulder == "3")
@@ -1498,7 +1535,7 @@ do
     assert(ns.Profiles.Delete("Photo") and not ns.db.profiles.Photo)
     local count = #ns.Profiles.List()
     for _, bad in ipairs({
-        "return _G", exported:gsub("PROFILE:10", "PROFILE:11"),
+        "return _G", exported:gsub("PROFILE:11", "PROFILE:12"),
         exported .. ";cameraConsent=true", exported .. ";letterboxHeight=5",
         exported:gsub("letterboxHeight=17.199999999999999", "letterboxHeight=1e999"),
         exported:gsub("showMinimapButton=false;", ""), exported .. ";;",
@@ -1548,7 +1585,7 @@ do
     ns.SetLetterboxHeight(13.4)
     click(childButton("Export"))
     local exportString = RetCinemaCopyDialog.editBox:GetText()
-    assert(exportString:find("RETCINEMA_PROFILE:10|UI Profile|", 1, true) == 1)
+    assert(exportString:find("RETCINEMA_PROFILE:11|UI Profile|", 1, true) == 1)
     RetCinemaCopyDialog:Hide()
     click(childButton("Import"))
     RetCinemaProfileDialog.editBox:SetText("invalid")
@@ -1603,9 +1640,9 @@ do
     assert(RetCinemaWishBoard:IsShown())
     assert(find(function(f) return f.parent == RetCinemaWishBoard and f.kind == "Button" and f:GetText() == "Improve descriptions and tooltips" end))
     assert(find(function(f) return f.parent == RetCinemaWishBoard and f.kind == "Button" and f:GetText() == ns.ColorRet("Add a 'Like ret_' profile") end))
-    local feature = find(function(f) return f.parent == RetCinemaWishBoard and f.kind == "Button" and f.text == "LiteRP: Walk" end)
+    local feature = find(function(f) return f.parent == RetCinemaWishBoard and f.kind == "Button" and f.text == ns.FormatText("LiteRP: Walk") end)
     click(feature)
-    assert(find(function(f) return f.parent == RetCinemaWishBoard and f.text == "Walk applies a Lens while walk mode is enabled. LiteRP is available through Advanced Cinematographer." end))
+    assert(find(function(f) return f.parent == RetCinemaWishBoard and f.text == ns.FormatText("Walk applies a Lens while walk mode is enabled. LiteRP is available through Advanced Cinematographer.") end))
     RetCinemaWishBoard:Hide()
     RetCinema_OpenSettings()
     assert(RetCinemaSettingsPanel:IsShown() and not support:IsShown())
@@ -1651,7 +1688,7 @@ do
     assert(cvars.cameraFov == "85" and ns.SetFOV(70) and ns.SetFOV(80, true))
     ns.SetPermanentFOV(true)
     assert(cvars.cameraFov == "85" and RetCinemaFOVAnimator.scripts.OnUpdate)
-    RetCinemaFOVAnimator.scripts.OnUpdate(RetCinemaFOVAnimator, 0.175)
+    RetCinemaFOVAnimator.scripts.OnUpdate(RetCinemaFOVAnimator, 0.25)
     assert(math.abs(tonumber(cvars.cameraFov) - 82.5) < 0.001)
     settle(); assert(cvars.cameraFov == "80" and ns.db.fovRestore == "85")
     RetCinema_RunBinding("RETCINEMA_FOV"); settle(); assert(cvars.cameraFov == "70" and ns.fovActive)
@@ -1680,8 +1717,8 @@ do
     assert(durationCheck:IsShown() and not durationCheck:GetChecked() and not RetCinemaLensFOVfovDurationInput)
     durationCheck:SetChecked(true); click(durationCheck)
     local fovDurationInput = RetCinemaLensFOVfovDurationInput
-    assert(fovDurationInput and fovDurationInput:IsShown() and fovDurationInput:GetText() == "0.35")
-    fovDurationInput.scripts.OnEnter(fovDurationInput); assert(GameTooltip:GetText() == "Enter an exact value.\nDefault: 0.35")
+    assert(fovDurationInput and fovDurationInput:IsShown() and fovDurationInput:GetText() == "0.5")
+    fovDurationInput.scripts.OnEnter(fovDurationInput); assert(GameTooltip:GetText() == "Enter an exact value.\n\nDefault: 0.5")
     fovDurationInput:SetText("2"); fovDurationInput.scripts.OnEnterPressed(fovDurationInput)
     ns.SetFOV(65); RetCinema_ToggleFOV()
     RetCinemaFOVAnimator.scripts.OnUpdate(RetCinemaFOVAnimator, 1)
@@ -1691,16 +1728,17 @@ do
     assert(math.abs(tonumber(cvars.cameraFov) - 75) < 0.001, "FOV return must use the configured duration")
     settle(); assert(cvars.cameraFov == "85")
     durationCheck:SetChecked(false); click(durationCheck)
-    assert(not fovDurationInput.parent:IsShown() and ns.db.fovDuration == 2, "Disclosure only changes visibility")
+    assert(not fovDurationInput.parent:IsShown() and ns.db.fovDuration == 2 and ns.EffectSettings("fov").duration == 0.5, "Unchecked custom duration must use the default without erasing the saved value")
     assert(ns.SetEffectSetting("fovDuration", 1, true) and ns.SetEffectSetting("fovDuration", 3, false, 3))
     assert(ns.db.permanentFovDuration == 1 and ns.db.extraCombinedLenses[3].fovDuration == 3)
+    ns.SetEffectSetting("customFovDuration", true, true)
     ns.SetFOV(75, true); ns.SetPermanentFOV(true)
     RetCinemaFOVAnimator.scripts.OnUpdate(RetCinemaFOVAnimator, 0.5)
     assert(math.abs(tonumber(cvars.cameraFov) - 80) < 0.001)
     settle(); ns.SetPermanentFOV(false); settle()
     ns.SetAdvanced("fovSpeed", false); assert(not durationCheck:IsShown())
-    assert(not ns.SetEffectSetting("fovDuration", 3) and ns.EffectSettings("fov").duration == 0.35)
-    RetCinema_ToggleFOV(); RetCinemaFOVAnimator.scripts.OnUpdate(RetCinemaFOVAnimator, 0.35)
+    assert(not ns.SetEffectSetting("fovDuration", 3) and ns.EffectSettings("fov").duration == 0.5)
+    RetCinema_ToggleFOV(); RetCinemaFOVAnimator.scripts.OnUpdate(RetCinemaFOVAnimator, 0.5)
     assert(cvars.cameraFov == "65" and not RetCinemaFOVAnimator.scripts.OnUpdate)
     pressEscape(); settle()
     ns.SetAdvanced("fovSpeed", true)
@@ -1710,6 +1748,7 @@ do
     ns.SetLetterboxHeight(12, true)
     ns.SetEffectSetting("letterboxOpacity", 0.6, true)
     ns.SetEffectSetting("letterboxOpacity", 0.4)
+    ns.SetEffectSetting("customLetterboxDuration", true)
     ns.SetEffectSetting("letterboxDuration", 2)
     ns.SetPermanentLetterbox(true); settle()
     assert(top.height == 120 and bars.alpha == 0.6)
@@ -1739,21 +1778,21 @@ do
     -- HideUI can hide either part independently, including per-lens preferences.
     ns.SetEffectSetting("hideInterface", false); ns.SetEffectSetting("hideNames", true)
     effectTab(1)
-    local hideInterface = checkbox(page("hideui").content, "Don't hide interface elements")
-    hideInterface:SetChecked(false); click(hideInterface); assert(ns.db.hideInterface)
-    hideInterface:SetChecked(true); click(hideInterface); assert(not ns.db.hideInterface)
+    local hideInterface = checkbox(page("hideui").content, "Hide interface elements")
+    hideInterface:SetChecked(true); click(hideInterface); assert(ns.db.hideInterface)
+    hideInterface:SetChecked(false); click(hideInterface); assert(not ns.db.hideInterface)
     RetCinema_ToggleUI(); assert(UIParent:IsShown() and cvars.UnitNameNPC == "0")
     pressEscape(); assert(UIParent:IsShown() and cvars.UnitNameNPC == "1")
     ns.SetEffectSetting("hideInterface", true); ns.SetEffectSetting("hideNames", false)
     RetCinema_ToggleUI(); assert(not UIParent:IsShown() and cvars.UnitNameNPC == "1")
     pressEscape(); assert(UIParent:IsShown())
     Settings.OpenToCategory(ns.settingsCategories.lens:GetID()); lensPage.refresh()
-    local hideGear = binding("RETCINEMA_HIDEUI", 1).parent.gear
+    local hideGear = binding("RETCINEMA_HIDEUI", 1).parent.gears[1]
     click(hideGear)
     assert(RetCinemaCombinedSettingsDialog.index == 1, "HideUI gear must include CL1")
-    local cl1Exception = checkbox(RetCinemaCombinedSettingsDialog.extraGroups.hideui, "Don't hide interface elements")
-    assert(not cl1Exception:GetChecked())
-    cl1Exception:SetChecked(true); click(cl1Exception)
+    local cl1Exception = checkbox(RetCinemaCombinedSettingsDialog.extraGroups.hideui, "Hide interface elements")
+    assert(cl1Exception:GetChecked())
+    cl1Exception:SetChecked(false); click(cl1Exception)
     assert(not ns.db.hideInterface and not ns.EffectSettings("hideui", false, 1).hideInterface)
     ns.CloseCombinedSettings(); ns.SetEffectSetting("hideInterface", true)
     ns.SetCombinedAction("RETCINEMA_HIDEUI", true, 3)
@@ -1764,6 +1803,7 @@ do
 
     -- Camera options and animation duration return exactly to the player's values.
     local baseline = { head = cvars.test_cameraHeadMovementStrength, enemy = cvars.test_cameraTargetFocusEnemyEnable, interact = cvars.test_cameraTargetFocusInteractEnable, combat = cvars.CameraFollowTargetCombat }
+    ns.SetEffectSetting("customCameraDuration", true)
     ns.SetCameraOffset(4); ns.SetEffectSetting("cameraDuration", 2)
     ns.SetEffectSetting("cameraHeadMovement", true); ns.SetEffectSetting("cameraTargetFocus", true)
     effectTab(3)
@@ -1798,11 +1838,12 @@ do
         local old2 = ns.GetCombinedActions(2).RETCINEMA_CAMERA
         ns.SetCombinedAction("RETCINEMA_CAMERA", true, 1); ns.SetCombinedAction("RETCINEMA_CAMERA", true, 2)
         Settings.OpenToCategory(ns.settingsCategories.lens:GetID()); lensPage.refresh()
-        click(binding("RETCINEMA_CAMERA", 1).parent.gear)
+        click(binding("RETCINEMA_CAMERA", 1).parent.gears[1])
         local gear = RetCinemaCombinedSettingsDialog
         assert(gear.index == 1 and gear.previous:GetHeight() == 30 and gear.next:GetHeight() == 30)
         local group = gear.extraGroups.camerashift
         local check = find(function(f) return f.parent == group and f.durationKey == "cameraDuration" end)
+        ns.SetEffectSetting("customCameraDuration", false, false, 1); gear.refresh()
         assert(not check:GetChecked())
         local duration1, duration2 = ns.db.cameraDuration, ns.db.extraCombinedLenses[2].cameraDuration
         assert(ns.SetEffectSetting("cameraDuration", 0.7, false, 1) and ns.SetEffectSetting("cameraDuration", 1.2, false, 2))
@@ -1811,10 +1852,12 @@ do
         assert(check:GetChecked())
         click(gear.previous); assert(gear.index == 1 and not check:GetChecked(), "CL2 disclosure must never check CL1")
         assert(ns.db.cameraDuration == 0.7 and ns.db.extraCombinedLenses[2].cameraDuration == 1.2)
+        assert(ns.EffectSettings("camerashift", false, 1).duration == 0.5 and ns.EffectSettings("camerashift", false, 2).duration == 1.2, "Each Lens must independently enable or bypass its saved custom duration")
         click(gear.next); assert(gear.index == 2 and check:GetChecked())
         click(gear.next); assert(gear.index == 3 and not check:GetChecked())
         click(gear.next); assert(gear.index == 1, "Gear arrows must wrap over selected lenses")
         ns.CloseCombinedSettings()
+        ns.SetEffectSetting("customCameraDuration", true, false, 1)
         ns.SetEffectSetting("cameraDuration", duration1, false, 1); ns.SetEffectSetting("cameraDuration", duration2, false, 2)
         ns.SetCombinedAction("RETCINEMA_CAMERA", old1, 1); ns.SetCombinedAction("RETCINEMA_CAMERA", old2, 2)
     end
@@ -1823,7 +1866,7 @@ do
     for index = 2, 5 do ns.SetCombinedAction("RETCINEMA_FOV", index == 3, index) end
     Settings.OpenToCategory(ns.settingsCategories.lens:GetID()); lensPage.refresh()
     local fovRow = binding("RETCINEMA_FOV", 1).parent
-    click(fovRow.gear)
+    click(fovRow.gears[3])
     local dialog = RetCinemaCombinedSettingsDialog
     assert(dialog:IsShown() and dialog.index == 3 and dialog.counter:GetText() == "1 / 1")
     click(dialog.selector)
@@ -1831,8 +1874,8 @@ do
     click(dialog.selector.menu.children[1])
     RetCinemaCombinedFOVInput:SetText("65"); RetCinemaCombinedFOVInput.scripts.OnEnterPressed(RetCinemaCombinedFOVInput)
     assert(ns.GetCombinedEffectValue(3, "fov") == 65)
-    click(fovRow.gear); assert(not dialog:IsShown())
-    click(fovRow.gear)
+    click(fovRow.gears[3]); assert(not dialog:IsShown())
+    click(fovRow.gears[3])
     local special = {}; for _, name in ipairs(UISpecialFrames) do special[name] = true end
     assert(special.RetCinemaCombinedSettingsDialog and special.RetCinemaAdvancedDialog)
     ns.CloseCombinedSettings()
@@ -1915,7 +1958,7 @@ do
     durationInput:SetText("4,2 s"); durationInput.scripts.OnEnterPressed(durationInput)
     assert(ns.db.roleplayLogoutDuration1 == 4.2)
     durationInput.scripts.OnEnter(durationInput)
-    assert(GameTooltip:GetText() == "Enter an exact value.\nDefault: 10 s")
+    assert(GameTooltip:GetText() == "Enter an exact value.\n\nDefault: 10 s")
     click(durationInput.parent.reset); assert(ns.db.roleplayLogoutDuration1 == 10)
     ns.SetRoleplayNumber("roleplayLogoutStart", 10)
     ns.SetRoleplayNumber("roleplayLogoutMax", 35)
@@ -1937,7 +1980,7 @@ do
     assert(not RetCinemaGoOfflineDialog:IsShown() and not RetCinemaGoOfflineDialog.propagateKeyboard and rpPage:IsShown())
     local walkCheck = checkbox(rpPage.content, "Walk")
     walkCheck.scripts.OnEnter(walkCheck)
-    assert(GameTooltip:GetText():find("|cffff8000Warning!|r", 1, true) == 1)
+    assert(GameTooltip:GetText():find(ns.ChatText("SYSTEM", "Warning!"), 1, true) == 1)
     for _, kind in ipairs({ "Sit", "Lay", "Lean" }) do
         local check = checkbox(rpPage.content, kind)
         assert(staySelectors[kind].points.TOPLEFT[1] == 12 and staySelectors[kind].points.TOPLEFT[2] < check.points.TOPLEFT[2])
@@ -1946,9 +1989,9 @@ do
     -- GoOffline selects its own Lens; its animation overrides that Lens and its buttons.
     do
         local rpPage = RetCinemaLiteRPPanel
-        assert(rpPage.name == "|cffff99ccLiteRP|r" and rpPage.moveColumn.parent == rpPage.roleplayBox and rpPage.stayColumn.parent == rpPage.roleplayBox)
+        assert(rpPage.name == ns.ChatText("EMOTE", "LiteRP") and rpPage.moveColumn.parent == rpPage.roleplayBox and rpPage.stayColumn.parent == rpPage.roleplayBox)
         assert(rpPage.stayColumn.points.TOPLEFT[1] > rpPage.moveColumn.points.TOPLEFT[1])
-        local title = find(function(f) return f.parent == rpPage.content and f:GetText() == "RP Actions:" end)
+        local title = find(function(f) return f.parent == rpPage and f:GetText() == "Bring your Lens into RP Actions" end)
         assert(title.fontSize == 18 and title.color[2] == 0.82)
         for _, f in ipairs(frames) do assert(not (f.kind == "CheckButton" and f.label and (f.label:GetText() == "Move" or f.label:GetText() == "Stay")), "Section switches were removed") end
         local members = {}; for key, value in pairs(ns.GetCombinedActions(2)) do members[key] = value end
@@ -1967,8 +2010,8 @@ do
         local animation = rp.scripts.OnUpdate
         RetCinema_ToggleCombined(2); RetCinema_ToggleUI(); RetCinema_ToggleCameraShift(); RetCinema_ToggleLetterbox()
         assert(rp.scripts.OnUpdate == animation and top.height == 150 and UIParent:GetAlpha() == 0)
-        pressEscape(); assert(ns.IsRoleplayActive() and rp.scripts.OnUpdate == animation, "Lens Escape cannot cancel the RP logout action")
-        CancelLogout(); settle()
+        pressEscape(); assert(not ns.IsRoleplayActive() and not rp.scripts.OnUpdate, "Escape ends the RP logout scene and cancels the native countdown")
+        settle()
         assert(not ns.IsRoleplayActive() and not bars:IsShown() and not ns.IsCameraShiftActive() and UIParent:GetAlpha() == 0.8)
         UIParent:SetAlpha(previousAlpha)
         ns.SetEffectSetting("letterboxDuration", duration, false, 2)
@@ -1985,12 +2028,12 @@ do
     showDuration:SetChecked(true); click(showDuration)
     local letterDuration = find(function(f) return f.parent == page("letterbox").content and f.settingKey == "letterboxDuration" and not f.permanentMode end)
     letterDuration.input.scripts.OnEnter(letterDuration.input)
-    assert(GameTooltip:GetText() == "Enter an exact value.\nDefault: 0.3")
-    click(letterDuration.reset); assert(ns.db.letterboxDuration == 0.3)
+    assert(GameTooltip:GetText() == "Enter an exact value.\n\nDefault: 0.5")
+    click(letterDuration.reset); assert(ns.db.letterboxDuration == 0.5)
     ns.SetEffectSetting("letterboxDuration", 5, true)
     ns.SetLetterboxHeight(10, true); ns.SetPermanentLetterbox(true); settle()
     ns.SetPermanentLetterbox(false)
-    bars.scripts.OnUpdate(bars, 0.3)
+    bars.scripts.OnUpdate(bars, 0.5)
     assert(not bars:IsShown() and not bars.scripts.OnUpdate, "Disabled Permanent must return using the default duration")
     assert(checkbox(page("hideui").content, "Apply HideUI to Lens").points.TOPLEFT[2] == checkbox(page("letterbox").content, "Apply Letterbox to Lens").points.TOPLEFT[2])
     local nextEffect = find(function(f) return f.frameRole == "nextEffect" end)
@@ -2000,12 +2043,12 @@ do
     ns.SetAdvanced("cameraHeadMovement", true); assert(lensHead:IsShown())
     effectTab(4); assert(current:GetFontString().color[2] == 0.82)
     for _, name in ipairs({ "RetCinemaAdvancedDialog", "RetCinemaCombinedSettingsDialog", "RetCinemaProfileDialog", "RetCinemaCopyDialog", "RetCinemaWishBoard" }) do
-        assert(_G[name].backdropColor[4] == 0.8, name .. " must have an 80% opaque background")
+        assert(_G[name].backdropColor[4] == 0.9 and _G[name].closeButton, name .. " must have a close button and a 90% opaque background")
     end
     Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
     local r = binding("RETCINEMA_LETTERBOX", 1).parent
     local center = 12 + r.extraContainer.points.TOPLEFT[1] + r.extraContainer:GetWidth() / 2
-    assert(center == 342 + 190 / 2, "The complete membership container must be centered under the third column")
+    assert(center == 276 + 240 / 2, "The complete membership container must be centered under the third column")
     local summary = binding("RETCINEMA_COMBINED", 1).parent.summary
     assert(summary.justifyH == "CENTER" and 12 + summary.points.TOPLEFT[1] + summary:GetWidth() / 2 == center)
     assert(general:GetHeight() == 432)
@@ -2017,24 +2060,28 @@ do
     -- New preferences are included in profile exports, including the 50% range.
     local originalName = ns.Profiles.Current()
     local export = ns.Profiles.Export()
-    assert(export:find("RETCINEMA_PROFILE:10|", 1, true) == 1 and export:find("letterboxHeight=50", 1, true))
+    assert(export:find("RETCINEMA_PROFILE:11|", 1, true) == 1 and export:find("letterboxHeight=50", 1, true))
     local ok, imported = ns.Profiles.Import(export)
     assert(ok and ns.db.advanced.letterboxFull and ns.db.letterboxHeight == 50 and ns.db.extraCombinedLenses[3].fov == 65)
     assert(ns.Profiles.Activate(originalName) and ns.Profiles.Delete(imported))
     assert(not export:find("roleplayDo=", 1, true) and not export:find("roleplayStay=", 1, true) and export:find("roleplayLogoutTarget=4", 1, true))
-    local legacy9 = export:gsub("PROFILE:10", "PROFILE:9"):gsub(";roleplayLogoutTarget=[^;]+", "") .. ";roleplayDo=false;roleplayStay=false"
+    local legacy10 = export:gsub(";advanced%.rp%a+=[^;]+", ""):gsub(";[%w_.]*[Cc]ustom%u%w+Duration=[^;]+", "")
+    local old10, old10Name = ns.Profiles.Import((legacy10:gsub("PROFILE:11", "PROFILE:10")))
+    assert(old10 and ns.Advanced("rpWalk") == ns.db.triggerEnabled and ns.Advanced("rpSit") == ns.db.roleplaySit)
+    assert(ns.Profiles.Activate(originalName) and ns.Profiles.Delete(old10Name))
+    local legacy9 = legacy10:gsub("PROFILE:11", "PROFILE:9"):gsub(";roleplayLogoutTarget=[^;]+", "") .. ";roleplayDo=false;roleplayStay=false"
     local ok9, name9 = ns.Profiles.Import(legacy9)
     assert(ok9 and ns.db.roleplayDo == nil and ns.db.roleplayStay == nil, "Removed gates must be discarded during version-9 migration")
     assert(ns.Profiles.Activate(originalName) and ns.Profiles.Delete(name9))
-    local legacy8 = export:gsub("PROFILE:10", "PROFILE:8"):gsub(";roleplayLogoutTarget=[^;]+", "")
+    local legacy8 = legacy10:gsub("PROFILE:11", "PROFILE:8"):gsub(";roleplayLogoutTarget=[^;]+", "")
     local ok8, name8 = ns.Profiles.Import(legacy8)
     assert(ok8 and ns.db.roleplayDo == nil and ns.db.roleplayStay == nil and ns.db.roleplayLogoutTarget == -1)
     assert(ns.Profiles.Activate(originalName) and ns.Profiles.Delete(name8))
-    local legacy7 = export:gsub("PROFILE:10", "PROFILE:7"):gsub(";roleplayLogoutTarget=[^;]+", ""):gsub(";advanced%.fovSpeed=[^;]+", ""):gsub(";[%w_.]*[Ff]ovDuration=[^;]+", "")
+    local legacy7 = legacy10:gsub("PROFILE:11", "PROFILE:7"):gsub(";roleplayLogoutTarget=[^;]+", ""):gsub(";advanced%.fovSpeed=[^;]+", ""):gsub(";[%w_.]*[Ff]ovDuration=[^;]+", "")
     local imported7, name7 = ns.Profiles.Import(legacy7)
-    assert(imported7 and ns.db.fovDuration == 0.35 and not ns.Advanced("fovSpeed"), "Version 7 must migrate new FOV defaults safely")
+    assert(imported7 and ns.db.fovDuration == 0.5 and not ns.Advanced("fovSpeed"), "Version 7 must migrate new FOV defaults safely")
     assert(ns.Profiles.Activate(originalName) and ns.Profiles.Delete(name7))
-    local legacy6 = export:gsub("PROFILE:10", "PROFILE:6"):gsub(";roleplayLogoutTarget=[^;]+", "")
+    local legacy6 = legacy10:gsub("PROFILE:11", "PROFILE:6"):gsub(";roleplayLogoutTarget=[^;]+", "")
     legacy6 = legacy6:gsub(";advanced%.fovSpeed=[^;]+", ""):gsub(";[%w_.]*[Ff]ovDuration=[^;]+", "")
     legacy6 = legacy6:gsub(";advanced%.cameraHeadMovement=[^;]+", ""):gsub(";advanced%.cameraTargetFocus=[^;]+", "")
     legacy6 = legacy6:gsub(";roleplay%a+Target=[^;]+", ""):gsub(";roleplayLogout%a+%d*=[^;]+", "")
@@ -2045,6 +2092,224 @@ do
     ns.ApplyProfilePreferences(preferences); ns.Profiles.Save(); settle()
 end
 print("PASS: FOV permanent/Lens/logout, working Advanced options, 50% bars, exact head/target restoration, filtered gear pages, postures and 20-second logout phases")
+
+-- Advanced permissions expose controls without enabling actions. Shared HideUI
+-- ownership must be idempotent, including when another Lens adds more Effects.
+do
+    local function settle() for _ = 1, 8 do finishEffects() end end
+    ns.Profiles.Save()
+    local preferences = ns.db.profiles[ns.Profiles.Current()]
+    ns.SetAdvanced(nil, false)
+    while ns.GetCombinedCount() < 2 do assert(ns.AddCombinedLens()) end
+    ns.SetPermanentLetterbox(false); ns.SetPermanentCameraShift(false); ns.SetPermanentFOV(false)
+    for _, action in ipairs(ns.actions) do
+        ns.SetEffectEnabled(action.effect, true); ns.SetApplyToLens(action.effect, true)
+        for index = 1, ns.GetCombinedCount() do ns.SetCombinedAction(action.binding, false, index) end
+    end
+    for index = 1, 2 do ns.SetCombinedAction("RETCINEMA_HIDEUI", true, index); ns.SetCombinedExitAll(index, false) end
+    ns.RestoreAll(); settle()
+    local originalNames, visibility = cvars.UnitNameNPC, SetUIVisibility
+    local changes = 0
+    SetUIVisibility = function(shown) changes = changes + 1; visibility(shown) end
+    RetCinema_ToggleCombined(1)
+    local afterFirst = changes
+    RetCinema_ToggleCombined(2)
+    assert(not UIParent:IsShown() and cvars.UnitNameNPC == "0" and changes == afterFirst, "Identical HideUI must not show/re-hide the UI when applying another Lens")
+    RetCinema_ToggleCombined(1)
+    assert(not UIParent:IsShown(), "An ordinary Lens cannot restore UI still owned by another Lens")
+    RetCinema_ToggleCombined(2)
+    assert(UIParent:IsShown() and cvars.UnitNameNPC == originalNames, "The last ordinary owner restores the original baseline")
+    ns.SetCombinedExitAll(1, true)
+    RetCinema_ToggleCombined(1); RetCinema_ToggleCombined(2); RetCinema_ToggleCombined(1)
+    assert(UIParent:IsShown(), "Escape Button may exit an identical scene even after another Lens")
+    ns.SetCombinedAction("RETCINEMA_LETTERBOX", true, 2)
+    RetCinema_ToggleCombined(1); RetCinema_ToggleCombined(2); settle()
+    assert(not UIParent:IsShown() and bars:IsShown())
+    RetCinema_ToggleCombined(1); settle()
+    assert(not UIParent:IsShown() and not bars:IsShown(), "The first Escape Button press replaces the extra Effect with its own scene")
+    RetCinema_ToggleCombined(1); settle()
+    assert(UIParent:IsShown() and cvars.UnitNameNPC == originalNames)
+    SetUIVisibility = visibility
+
+    ns.SetAdvanced(nil, true); ns.SetAdvanced("roleplay", true)
+    for _, action in ipairs(ns.roleplayActions) do
+        ns.SetAdvanced(action.id, false)
+        if action.kind == "Walk" then ns.SetTrigger(false, 1) else ns.SetRoleplayOption(action.key, false) end
+    end
+    Settings.OpenToCategory(ns.settingsCategories.literp:GetID())
+    local rpPage = RetCinemaLiteRPPanel
+    local walk = checkbox(rpPage.content, "Walk")
+    assert(not walk:IsShown() and next(RetCinemaRoleplayEvents.events) == nil and not RetCinemaRoleplayEvents.scripts.OnUpdate)
+    ns.SetAdvanced("rpWalk", true)
+    assert(walk:IsShown() and not walk:GetChecked() and not ns.db.triggerEnabled and next(RetCinemaRoleplayEvents.events) == nil)
+    assert(ns.SetTrigger(true, 1)); ns.SyncWalkingMode(true); settle()
+    assert(ns.IsRoleplayActive() and bars:IsShown())
+    ns.SetAdvanced("rpWalk", false); settle()
+    assert(not walk:IsShown() and ns.db.triggerEnabled and not ns.IsRoleplayActive() and next(RetCinemaRoleplayEvents.events) == nil and not RetCinemaRoleplayEvents.scripts.OnUpdate, "Hiding Walk stops runtime work while preserving its own preference")
+    ns.SetTrigger(false, 1)
+    for _, kind in ipairs({ "Sit", "Lay", "Lean", "Logout" }) do ns.SetAdvanced("rp" .. kind, true) end
+    for _, kind in ipairs({ "Lay", "Lean", "Logout" }) do assert(rpPage.actionRules[kind]:IsShown()) end
+    ns.SetAdvanced("rpSit", false)
+    assert(not rpPage.actionRules.Lay:IsShown() and rpPage.actionRules.Lean:IsShown(), "Only visible actions have separators between them")
+
+    ns.SetAdvanced("hideInterface", true); ns.SetAdvanced("hideNames", true)
+    ns.SetEffectSetting("hideInterface", true); ns.SetEffectSetting("hideNames", true)
+    ns.SetEffectSetting("hideInterface", true, false, 2); ns.SetEffectSetting("hideNames", true, false, 2)
+    ns.SetAdvanced("hideInterface", false); ns.SetAdvanced("hideNames", false)
+    assert(not ns.db.hideInterface and not ns.db.hideNames and not ns.db.extraCombinedLenses[2].hideInterface and not ns.db.extraCombinedLenses[2].hideNames)
+    assert(ns.EffectSettings("hideui").hideInterface and ns.EffectSettings("hideui", false, 2).hideNames, "Hidden controls use standard HideUI behavior")
+    ns.SetAdvanced("hideInterface", true)
+    effectTab(1)
+    local hideCheck = checkbox(page("hideui").content, "Hide interface elements")
+    hideCheck.scripts.OnEnter(hideCheck); assert(GameTooltip:GetText():match("\n\nDefault: Checked$"))
+    assert(hideCheck:IsShown() and not hideCheck:GetChecked())
+    ns.SetApplyToLens("hideui", false); assert(not hideCheck:IsShown())
+    ns.SetApplyToLens("hideui", true); assert(hideCheck:IsShown())
+
+    local dialog = RetCinemaAdvancedDialog
+    assert(dialog.title.color[1] == 1 and dialog.title.color[2] == 0.82)
+    assert(find(function(f) return f.parent == dialog and f.atlas == "Options_HorizontalDivider" end))
+    local originalColor = ChatTypeInfo.EMOTE
+    ChatTypeInfo.EMOTE = { r = 0.2, g = 0.4, b = 0.6 }
+    assert(ns.ChatText("EMOTE", "LiteRP") == "|cff336699LiteRP|r" and ns.FormatText(ns.FormatText("LiteRP")) == "|cff336699LiteRP|r")
+    ChatTypeInfo.EMOTE = originalColor
+    for _, name in ipairs({ "RetCinemaAdvancedDialog", "RetCinemaCombinedSettingsDialog", "RetCinemaProfileDialog", "RetCinemaCopyDialog", "RetCinemaWishBoard", "RetCinemaGoOfflineDialog" }) do
+        local modal = assert(_G[name]); assert(modal.backdropColor[4] == 0.9 and modal.closeButton.parent == modal and modal.closeButton.points.TOPRIGHT)
+        modal:Show(); click(modal.closeButton); assert(not modal:IsShown())
+    end
+    ns.ApplyProfilePreferences(preferences); ns.Profiles.Save(); settle()
+end
+print("PASS: Advanced visibility versus activation, idle hidden RP actions, action separators, native chat colors, modal close buttons and overlapping HideUI ownership")
+
+do
+    local function settle() for _ = 1, 8 do finishEffects() end end
+    local original = ns.Profiles.Current()
+    assert(ns.Profiles.Create("Defaults 1.1.13"))
+    assert(ns.db.letterboxHeight == 5 and ns.db.cameraOffset == 1 and ns.db.permanentLetterboxHeight == 10 and ns.db.permanentCameraOffset == 1.5)
+    for _, key in ipairs({ "letterboxDuration", "cameraDuration", "fovDuration", "permanentLetterboxDuration", "permanentCameraDuration", "permanentFovDuration" }) do assert(ns.db[key] == 0.5) end
+    for _, action in ipairs(ns.actions) do ns.SetEffectEnabled(action.effect, true); ns.SetApplyToLens(action.effect, true) end
+    ns.SetAdvanced(nil, true)
+
+    -- Navigation coloring survives native font-state changes and pooled-row reuse.
+    local nav = CreateFrame("Button")
+    nav.Label = nav:CreateFontString()
+    local initializer = { data = { category = ns.settingsCategories.literp } }
+    function nav:GetElementData() return initializer end
+    function nav:UpdateStateInternal() self.Label:SetTextColor(1, 1, 1) end
+    local hook = navScroll.callbacks[1]
+    hook.callback(hook.owner, nav, initializer)
+    assert(nav.Label:GetText() == ns.ChatText("EMOTE", "LiteRP"))
+    nav:UpdateStateInternal()
+    assert(nav.Label.color[2] == ChatTypeInfo.EMOTE.g and nav.Label.color[3] == ChatTypeInfo.EMOTE.b)
+    initializer = { data = { category = ns.settingsCategories.effect } }
+    nav:UpdateStateInternal(); assert(nav.Label.color[2] == 1, "A recycled row must retain the other category's normal color")
+
+    ns.SetAdvanced("roleplay", true)
+    Settings.OpenToCategory(ns.settingsCategories.literp:GetID())
+    local rpPage = RetCinemaLiteRPPanel
+    assert(rpPage.scroll.points.TOPLEFT[4] == -12 and rpPage.roleplayBox.points.TOPLEFT[2] == 0)
+    assert(not rpPage.hint:GetText():match("%s$"), "No trailing blank lines may add to the one-line content gap")
+
+    -- Defaults and reset visibility agree in Effect and per-Lens controls.
+    effectTab(2)
+    local input = RetCinemaBarHeightInput
+    local control = input.parent
+    assert(input:GetText() == "5%" and not control.reset:IsShown())
+    input.scripts.OnEnter(input); assert(GameTooltip:GetText() == "Enter an exact value.\n\nDefault: 5%")
+    input:SetText("8"); input.scripts.OnEnterPressed(input); assert(control.reset:IsShown())
+    click(control.reset); assert(ns.db.letterboxHeight == 5 and not control.reset:IsShown())
+    ns.SetAdvanced("letterboxSpeed", true)
+    local custom = find(function(f) return f.parent == page("letterbox").content and f.durationKey == "letterboxDuration" and not f.permanentMode end)
+    custom:SetChecked(true); click(custom)
+    local duration = RetCinemaLensletterboxDurationInput
+    assert(duration:GetText() == "0.5" and not duration.parent.reset:IsShown())
+    duration:SetText("0.9"); duration.scripts.OnEnterPressed(duration); assert(duration.parent.reset:IsShown())
+    click(duration.parent.reset); assert(ns.db.letterboxDuration == 0.5 and not duration.parent.reset:IsShown())
+    effectTab(3); assert(RetCinemaCameraOffsetInput:GetText() == "1" and not RetCinemaCameraOffsetInput.parent.reset:IsShown())
+
+    ns.SetCombinedAction("RETCINEMA_LETTERBOX", true, 1)
+    Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
+    local box = binding("RETCINEMA_COMBINED", 1).parent.parent
+    local add = find(function(f) return f.parent == box and f.text == "+" end)
+    click(add)
+    local row2 = binding("RETCINEMA_COMBINED2", 1).parent
+    assert(row2:IsShown() and row2.escape:IsShown() and not ns.HasCombinedActions(2))
+    row2.escape:SetChecked(true); click(row2.escape)
+    assert(ns.GetEscapeLens() == 2 and not binding("RETCINEMA_COMBINED", 1).parent.escape:IsShown())
+    click(add)
+    local row3 = binding("RETCINEMA_COMBINED3", 1).parent
+    assert(row3:IsShown() and not row3.escape:IsShown())
+    Settings.OpenToCategory(ns.settingsCategories.main:GetID()); Settings.OpenToCategory(ns.settingsCategories.lens:GetID())
+    assert(row2:IsShown() and not row3:IsShown(), "An empty Escape Lens persists; an unassigned pending Lens disappears")
+    ns.SetCombinedExitAll(1, true)
+    assert(ns.GetEscapeLens() == 1 and not ns.GetCombinedExitAll(2) and not row2:IsShown())
+    ns.SetCombinedExitAll(1, false); assert(binding("RETCINEMA_COMBINED", 1).parent.escape:IsShown())
+    ns.SetCombinedExitAll(2, true)
+    local exported = ns.Profiles.Export()
+    local invalidOldFlags = exported:gsub("combinedAsEsc=false", "combinedAsEsc=true"):gsub("extraCombinedLenses%.3%.exitAll=false", "extraCombinedLenses.3.exitAll=true")
+    local imported, importedName = ns.Profiles.Import(invalidOldFlags)
+    assert(imported and ns.GetEscapeLens() == 1 and not ns.GetCombinedExitAll(2) and not ns.GetCombinedExitAll(3), "Old profiles with multiple Escape Buttons retain only the first")
+    assert(ns.Profiles.Activate("Defaults 1.1.13") and ns.Profiles.Delete(importedName))
+    assert(ns.GetEscapeLens() == 2)
+    ns.SetPermanentLetterbox(true); ns.SetLetterboxHeight(2, true); settle()
+    RetCinema_ToggleCombined(1); RetCinema_ToggleUI(); RetCinema_ToggleCameraShift(); ns.SetFOV(70); RetCinema_ToggleFOV(); settle()
+    assert(not UIParent:IsShown() and ns.IsCameraShiftActive() and ns.fovActive)
+    SlashCmdList.RETCINEMA("combinedlens2"); settle()
+    assert(UIParent:IsShown() and not ns.IsCameraShiftActive() and not ns.fovActive and top.height == 20, "An empty Escape Lens exits all temporary Effects and retains Permanent Letterbox")
+
+    -- Frame updates reach the camera/FOV targets at the same configured time.
+    ns.SetPermanentLetterbox(false); settle()
+    local startCamera, startFOV = tonumber(cvars.test_cameraOverShoulder), tonumber(cvars.cameraFov)
+    RetCinema_ToggleCameraShift(); RetCinema_ToggleFOV()
+    RetCinemaCameraAnimator.scripts.OnUpdate(RetCinemaCameraAnimator, 0.25)
+    RetCinemaFOVAnimator.scripts.OnUpdate(RetCinemaFOVAnimator, 0.25)
+    assert(math.abs((tonumber(cvars.test_cameraOverShoulder) - startCamera) / (ns.db.cameraOffset - startCamera) - 0.5) < 0.000001)
+    assert(math.abs((tonumber(cvars.cameraFov) - startFOV) / (ns.db.fov - startFOV) - 0.5) < 0.000001)
+    RetCinemaCameraAnimator.scripts.OnUpdate(RetCinemaCameraAnimator, 0.25)
+    RetCinemaFOVAnimator.scripts.OnUpdate(RetCinemaFOVAnimator, 0.25)
+    assert(not RetCinemaCameraAnimator.scripts.OnUpdate and not RetCinemaFOVAnimator.scripts.OnUpdate)
+    pressEscape(); settle(); assert(not RetCinemaEscapeHandler.propagateKeyboard)
+    ns.SetPermanentLetterbox(true); ns.SetLetterboxHeight(2, true); settle()
+    RetCinema_ToggleLetterbox()
+    bars.scripts.OnUpdate(bars, 0.3)
+    assert(top.height == 50 and not bars.scripts.OnUpdate, "Moving from 2% to 5% takes 0.5 * 3 / 5 seconds under the existing proportional Letterbox rule")
+    ns.RestoreAll(); ns.SetPermanentLetterbox(false); settle()
+
+    -- Native countdown visibility works both before and after the RP event.
+    ns.SetAdvanced("rpLogout", true); ns.SetRoleplayOption("roleplayLogout", true); ns.SetRoleplayTarget("Logout", 0)
+    local rp = RetCinemaRoleplayEvents
+    RetCinema_ToggleUI(); assert(not UIParent:IsShown())
+    local popup = StaticPopup_Show("CAMP"); popup:SetAlpha(0.65)
+    rp.scripts.OnEvent(rp, "PLAYER_CAMPING")
+    assert(UIParent:IsShown() and UIParent:GetAlpha() == 0 and popup:IsIgnoringParentAlpha() and popup:GetEffectiveAlpha() == 1)
+    CancelLogout(); settle()
+    assert(not popup:IsIgnoringParentAlpha() and popup:GetAlpha() == 0.65 and not popup:IsShown() and not rp.scripts.OnUpdate)
+    ns.RestoreAll(); settle()
+    rp.scripts.OnEvent(rp, "PLAYER_QUITING")
+    local quit = StaticPopup_Show("QUIT")
+    assert(quit:IsIgnoringParentAlpha() and quit:GetEffectiveAlpha() == 1 and UIParent:GetAlpha() == 0)
+    local nativeCancels = logoutCancelCalls
+    pressEscape(); settle()
+    assert(logoutCancelCalls == nativeCancels + 1 and not quit:IsIgnoringParentAlpha() and not quit:IsShown() and UIParent:GetAlpha() == 1)
+
+    -- An addon modal gets Escape before active Lenses; no redundant Close buttons.
+    RetCinema_ToggleLetterbox(); settle()
+    Settings.OpenToCategory(ns.settingsCategories.main:GetID())
+    click(find(function(f) return f.parent == general and f.kind == "Button" and f.text == "Advanced Cinematographer" end))
+    local modal = RetCinemaAdvancedDialog
+    RetCinemaEscapeHandler.scripts.OnKeyDown(RetCinemaEscapeHandler, "ESCAPE")
+    assert(modal:IsShown() and bars:IsShown(), "The Lens listener must defer to the open addon modal")
+    modal.scripts.OnKeyDown(modal, "ESCAPE"); assert(not modal:IsShown() and bars:IsShown())
+    pressEscape(); settle(); assert(not bars:IsShown() and not RetCinemaEscapeHandler.propagateKeyboard)
+    modal:Show(); RetCinema_ToggleUI()
+    assert(not UIParent:IsShown() and not ns.IsAddonDialogShown(), "A dialog hidden with UIParent must not intercept the Lens Escape handler")
+    pressEscape(); settle(); assert(UIParent:IsShown())
+    for _, f in ipairs(frames) do
+        if f.closeButton then for _, child in ipairs(f.children) do assert(not (child.kind == "Button" and child:GetText() == CLOSE)) end end
+    end
+    assert(ns.Profiles.Activate(original) and ns.Profiles.Delete("Defaults 1.1.13"))
+end
+print("PASS: navigation state colors, one-line LiteRP spacing, new defaults, conditional reset buttons, unique/empty Escape Lens, modal priority, equal CVar timing and native logout countdown visibility")
 
 -- Disabled effects stay idle; old profiles and interrupted camera snapshots migrate safely.
 for _, effect in ipairs(ns.effects) do ns.SetEffectEnabled(effect.id, false) end

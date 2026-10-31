@@ -32,7 +32,7 @@ BINDING_NAME_RETCINEMA_FOV = "FOV"
 for index = 2, 5 do _G["BINDING_NAME_RETCINEMA_COMBINED" .. index] = "Combined Lens " .. index end
 
 ns.icon = 136034
-ns.defaults = { letterboxHeight = 5, cameraOffset = 1, animationDuration = 0.5 }
+ns.defaults = { letterboxHeight = 5, cameraOffset = 1, animationDuration = 0.5, hideuiDuration = 0 }
 ns.presets = {
     { name = "Default", values = {} },
     { name = "ret_like", values = { cameraDuration = 0.42, permanentCameraDuration = 0.42 } },
@@ -92,8 +92,8 @@ ns.actions = {
 }
 
 ns.advancedOptions = {
-    { id = "hideInterface", group = "HideUI", name = "Don't hide interface elements" },
-    { id = "hideNames", group = "HideUI", name = "Don't hide creature names" },
+    { id = "hideInterface", group = "HideUI", name = "Show 'Hide interface elements'" },
+    { id = "hideNames", group = "HideUI", name = "Show 'Hide creature names'" },
     { id = "hideuiDuration", group = "HideUI", name = "Custom HideUI animation duration", version = 14 },
     { id = "letterboxOpacity", group = "Letterbox", name = "Custom Letterbox transparency" },
     { id = "letterboxSpeed", group = "Letterbox", name = "Custom Letterbox animation duration" },
@@ -136,7 +136,8 @@ ns.runtimeSettings = {}
 ns.settingSpecs = {
     { effect = "hideui", key = "hideInterface", label = "Hide interface elements", default = true, advanced = "hideInterface" },
     { effect = "hideui", key = "hideNames", label = "Hide creature names", default = true, advanced = "hideNames" },
-    { effect = "hideui", key = "hideuiDuration", label = "Animation duration (seconds)", default = ns.defaults.animationDuration, low = 0.1, high = 5, advanced = "hideuiDuration", version = 14 },
+    { effect = "hideui", key = "hideuiDuration", label = "Animation duration (seconds)", default = ns.defaults.hideuiDuration, low = 0, high = 5, advanced = "hideuiDuration", version = 14,
+        tooltip = "Set the UI fade duration in seconds. Set 0 to disable the animation. Creature names change immediately." },
     { effect = "letterbox", key = "letterboxOpacity", label = "Bar opacity", default = 1, low = 0, high = 1, advanced = "letterboxOpacity" },
     { effect = "letterbox", key = "letterboxDuration", label = "Animation duration (seconds)", default = ns.defaults.animationDuration, low = 0.1, high = 5, advanced = "letterboxSpeed" },
     { effect = "fov", key = "fovDuration", label = "Animation duration (seconds)", default = ns.defaults.animationDuration, low = 0.1, high = 5, advanced = "fovSpeed", version = 8 },
@@ -192,7 +193,7 @@ function ns.EffectSettings(effect, permanent, index)
     end
     local function duration(key)
         local field = permanent and "permanent" .. key:sub(1, 1):upper() .. key:sub(2) or key
-        return ns.PresetDefault(field, ns.defaults.animationDuration)
+        return ns.PresetDefault(field, key == "hideuiDuration" and ns.defaults.hideuiDuration or ns.defaults.animationDuration)
     end
     if effect == "hideui" then return {
         hideInterface = not ns.Advanced("hideInterface") or read("hideInterface", true),
@@ -722,7 +723,7 @@ function ns.RestoreUI(immediate)
     operationDepth = operationDepth + 1
     local restoreVisibility, shown = interfaceSuppressed or uiRestoreAlpha ~= nil, uiRestoreShown
     local alpha = uiRestoreAlpha
-    local duration = not immediate and (ns.Advanced("hideuiDuration") and uiFadeDuration or ns.PresetDefault("hideuiDuration", ns.defaults.animationDuration)) or 0
+    local duration = not immediate and (ns.Advanced("hideuiDuration") and uiFadeDuration or ns.PresetDefault("hideuiDuration", ns.defaults.hideuiDuration)) or 0
     StopUIFade()
     interfaceSuppressed = false
     RestoreMinimap()
@@ -792,6 +793,7 @@ function RetCinema_ToggleUI()
     operationDepth = operationDepth + 1
     UpdateEvents()
     if interfaceSuppressed then
+        if uiFadeDuration <= 0 then StopUIFade() end
         if uiFadeDuration > 0 then
             uiRestoreAlpha = uiRestoreAlpha or UIParent:GetAlpha()
             FadeUI(0, uiFadeDuration, function()

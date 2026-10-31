@@ -2081,7 +2081,7 @@ do
     assert(center == 276 + 240 / 2, "The complete membership container must be centered under the third column")
     local summary = binding("RETCINEMA_COMBINED", 1).parent.summary
     assert(summary.justifyH == "CENTER" and 12 + summary.points.TOPLEFT[1] + summary:GetWidth() / 2 == center)
-    assert(general:GetHeight() == 456)
+    assert(general:GetHeight() == 444)
 
     ns.SetAdvanced("roleplay", false)
     assert(next(rp.events) == nil and not rp.scripts.OnUpdate)
@@ -2492,7 +2492,8 @@ do
     assert(GameTooltip:GetText():match("\n\nDefault: Unchecked$"))
     advanced.checks.logoutLensButtons:SetChecked(true); click(advanced.checks.logoutLensButtons)
     assert(ns.LogoutLensButtonsAvailable() and not ns.db.roleplayLogoutAllowLensButtons, "Exposing Allow Lens buttons must not enable its runtime behavior")
-    assert(advanced.checks.hideInterface.label:GetText() == "Don't hide interface elements" and advanced.checks.hideNames.label:GetText() == "Don't hide creature names")
+    assert(advanced.checks.hideInterface.label:GetText() == "Show 'Hide interface elements'" and advanced.checks.hideNames.label:GetText() == "Show 'Hide creature names'")
+    assert(advanced.checks.rpLogout.label.color[1] == 1 and advanced.checks.rpLogout.label.color[2] == 1 and advanced.checks.rpLogout.label.color[3] == 1)
     advanced:Hide()
     ns.SetRoleplayOption("roleplayLogout", true); ns.SetRoleplayTarget("Logout", 4)
     ns.SetCombinedAction("RETCINEMA_CAMERA", true, 2)
@@ -2637,23 +2638,27 @@ do
         local frame = RetCinemaEscapeHandler
         if frame and frame:IsShown() then frame.scripts.OnKeyDown(frame, "ESCAPE") end
     end
-    -- The base Effect fades by default; Advanced only customizes its duration.
-    assert(ns.EffectSettings("hideui").duration == 0.5)
+    -- Zero is the preset reference and disables both transitions without updates.
+    assert(ns.db.hideuiDuration == 0 and ns.EffectSettings("hideui").duration == 0)
     RetCinema_ToggleUI()
-    assert(RetCinemaHideUIAnimator:GetScript("OnUpdate") and UIParent:IsShown())
-    RetCinemaHideUIAnimator.scripts.OnUpdate(RetCinemaHideUIAnimator, 0.25)
-    assert(UIParent:GetAlpha() > 0 and UIParent:GetAlpha() < 1)
-    RetCinema_ToggleUI(); settle()
+    assert(not UIParent:IsShown() and (not RetCinemaHideUIAnimator or not RetCinemaHideUIAnimator:GetScript("OnUpdate")))
+    RetCinema_ToggleUI()
+    assert(UIParent:IsShown() and (not RetCinemaHideUIAnimator or not RetCinemaHideUIAnimator:GetScript("OnUpdate")))
     ns.SetAdvanced("hideuiDuration", true)
     effectTab(1)
     local durationCheck = find(function(f) return f.parent == page("hideui").content and f.durationKey == "hideuiDuration" end)
     assert(durationCheck:IsShown() and not durationCheck:GetChecked() and not RetCinemaHideUIhideuiDurationInput)
     durationCheck:SetChecked(true); click(durationCheck)
     local input = RetCinemaHideUIhideuiDurationInput
-    input.scripts.OnEnter(input); assert(GameTooltip:GetText():match("\n\nDefault: 0.5$"))
+    input.scripts.OnEnter(input); assert(GameTooltip:GetText():match("\n\nDefault: 0$"))
+    assert(input.parent.slider.minimum == 0)
     input:SetText("0.42"); input.scripts.OnEnterPressed(input)
     assert(ns.db.hideuiDuration == 0.42 and input:GetText() == "0.42")
-    click(input.parent.reset); assert(ns.db.hideuiDuration == 0.5 and not input.parent.reset:IsShown())
+    click(input.parent.reset); assert(ns.db.hideuiDuration == 0 and not input.parent.reset:IsShown())
+    RetCinema_ToggleUI(); assert(not UIParent:IsShown() and (not RetCinemaHideUIAnimator or not RetCinemaHideUIAnimator:GetScript("OnUpdate")))
+    RetCinema_ToggleUI(); assert(UIParent:IsShown() and (not RetCinemaHideUIAnimator or not RetCinemaHideUIAnimator:GetScript("OnUpdate")))
+    assert(not ns.SetEffectSetting("hideuiDuration", -0.01))
+    input:SetText("0.5"); input.scripts.OnEnterPressed(input)
     local originalAlpha, originalNames = UIParent:GetAlpha(), cvars.UnitNameNPC
     UIParent:SetAlpha(0.8)
     RetCinema_ToggleUI()
@@ -2680,7 +2685,7 @@ do
     RetCinema_ToggleUI(); animator.scripts.OnUpdate(animator, 0.1)
     ns.SetAdvanced("hideuiDuration", false)
     settle()
-    assert(UIParent:GetAlpha() == 0.8 and UIParent:IsShown() and not animator:GetScript("OnUpdate") and ns.EffectSettings("hideui").duration == 0.5, "Hiding customization restores the base animation and leaves no idle work")
+    assert(UIParent:GetAlpha() == 0.8 and UIParent:IsShown() and not animator:GetScript("OnUpdate") and ns.EffectSettings("hideui").duration == 0, "Hiding customization restores the zero-duration preset and leaves no idle work")
 
     -- Duration values remain independent for every Combined Lens.
     ns.SetAdvanced("hideuiDuration", true)
@@ -2711,6 +2716,15 @@ do
     RetCinema_ToggleUI(); animator.scripts.OnUpdate(animator, 0.1)
     events.scripts.OnEvent(events, "PLAYER_LOGOUT")
     assert(UIParent:GetAlpha() == 0.8 and not animator:GetScript("OnUpdate") and not ns.db.hiddenCVars)
+    assert(ns.SetEffectSetting("hideuiDuration", 0, false, 2))
+    RetCinema_ToggleCombined(2)
+    assert(not UIParent:IsShown() and not animator:GetScript("OnUpdate"), "A CL accepts zero independently of the main HideUI duration")
+    RetCinema_ToggleCombined(2)
+    assert(UIParent:IsShown() and UIParent:GetAlpha() == 0.8 and not animator:GetScript("OnUpdate"))
+    local zeroExport = ns.Profiles.Export()
+    local zeroOk, zeroProfile = ns.Profiles.Import(zeroExport)
+    assert(zeroOk and ns.db.extraCombinedLenses[2].hideuiDuration == 0 and ns.db.hideuiDuration == 0.5, "Profile round trips preserve zero and positive durations independently")
+    assert(ns.Profiles.Activate(imported) and ns.Profiles.Delete(zeroProfile))
     UIParent:SetAlpha(originalAlpha)
     assert(ns.Profiles.Activate(original) and ns.Profiles.Delete(imported) and ns.Profiles.Delete("GoOffline and HideUI 1.1.16"))
     settle()

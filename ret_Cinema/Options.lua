@@ -10,7 +10,7 @@ local linkFonts = {}
 local presetChecks = {}
 local DESCRIPTION_FONT_SCALE = 1.5
 -- Lower this height to reduce the blank space above feedback and credits.
-local GENERAL_CONTENT_HEIGHT = 456
+local GENERAL_CONTENT_HEIGHT = 444
 local BINDING_BUTTON_WIDTH = 122
 local LENS_KEY_X, MEMBERSHIP_CENTER, MEMBERSHIP_STRIDE = 120, 384, 52
 local tabSpecs = {}
@@ -592,7 +592,8 @@ local function OpenAdvanced()
                             ns.SetAdvanced(node.id, self:GetChecked())
                             dialog.refresh()
                         end)
-                        if node.children and not node.experimental then node.control.label:SetTextColor(1, 0.82, 0) end
+                        if node.id == "rpLogout" then node.control.label:SetTextColor(1, 1, 1)
+                        elseif node.children and not node.experimental then node.control.label:SetTextColor(1, 0.82, 0) end
                         Tooltip(node.control, node.id == "letterboxFull" and "Show the option to allow each bar to cover up to half the screen." or "Show " .. node.name .. " settings. This does not enable the action or change its settings.")
                         dialog.checks[node.id] = node.control
                         node.control.defaultKey = "advanced." .. node.id
@@ -735,7 +736,7 @@ local function ExtraOptions(parent, effect, permanent, indexGetter, namePrefix)
                         end)
                         check.durationKey, check.permanentMode = key, permanent
                         check.defaultKey = function() return Path(Key(custom)) end
-                        Tooltip(check, effect == "hideui" and "Fade interface elements out and back in using a custom duration. Creature names change immediately." or "Set a custom duration for this Effect's animation.")
+                        Tooltip(check, effect == "hideui" and "Fade interface elements out and back in using a custom duration. Set 0 seconds to disable the animation. Creature names change immediately." or "Set a custom duration for this Effect's animation.")
                         durationChecks[key] = check
                     end
                     if check then

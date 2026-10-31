@@ -97,7 +97,7 @@ work while retaining its saved preference; collapsing a disclosure group only
 hides that group within Advanced and preserves availability.
 Controls are built only when their group is expanded:
 
-- **HideUI:** **Don't hide interface elements** and **Don't hide creature names** reveal controls for customizing the normal hiding behavior; both visibility permissions default to unchecked. **Custom HideUI animation duration** exposes an independent duration checkbox and input.
+- **HideUI:** **Show 'Hide interface elements'** and **Show 'Hide creature names'** reveal controls for customizing the normal hiding behavior; both visibility permissions default to unchecked. **Custom HideUI animation duration** exposes an independent duration checkbox and input.
 - **Letterbox:** **Custom Letterbox transparency**, **Custom Letterbox animation duration**, and permission to raise each bar to 50%.
 - **CameraShift:** **Custom CameraShift animation duration**, Head bob and Follow the target controls.
 - **FOV:** **Custom FOV animation duration**.
@@ -139,7 +139,7 @@ Lens. Hiding a control through Advanced clears its actual checkbox and restores
 standard HideUI behavior, which hides both parts. The HideUI gear is disabled
 until at least one HideUI control, including animation duration, is exposed.
 
-The interface fades out and returns over **0.5 seconds** by default. **Custom HideUI animation duration** in Advanced reveals an identically named checkbox in Effect and Combined Lens settings. Checking it reveals an exact duration input and slider supporting 0.01-second precision. Each Combined Lens has its own duration; CL1 shares the main Effect settings. Unchecking custom duration uses the selected preset reference. Creature names still switch immediately through their existing CVars; the alpha animation applies to the interface. Transitions reverse from the live alpha, restore the original visibility and opacity, and stop their update callback on completion. Disabling HideUI, switching profiles, and logout restore the original UI immediately. The animator is built only on first use and performs no idle work.
+HideUI animation duration defaults to **0 seconds** in both Global Presets: hiding and restoring the interface is immediate. Set a positive duration to enable fade-out and fade-in. **Custom HideUI animation duration** in Advanced reveals an identically named checkbox in Effect and Combined Lens settings. Checking it reveals an exact duration input and slider supporting **0–5 seconds** with 0.01-second precision. Zero disables both transitions without an animation callback. Existing saved positive durations are preserved; the preset tooltip and reset button reference zero. Each Combined Lens has its own duration; CL1 shares the main Effect settings. Unchecking custom duration uses the selected preset reference. Creature names still switch immediately through their existing CVars; the alpha animation applies to the interface. Transitions reverse from the live alpha, restore the original visibility and opacity, and stop their update callback on completion. Disabling HideUI, switching profiles, and logout restore the original UI immediately. The animator is built only on first use and performs no idle work.
 
 Applying another Combined Lens with identical HideUI settings keeps the UI hidden
 without briefly restoring it. Ordinary overlapping Lenses retain shared ownership
@@ -540,7 +540,7 @@ Change `## Notes:` in `ret_Cinema.toc` for the main page's addon description. Ch
 corresponding headings, hints, and Effect names. `description` is the larger
 yellow heading, and `hint` is the standard-size yellow explanation below it.
 Other labels and controls are in `Options.lua`.
-`GENERAL_CONTENT_HEIGHT = 456` controls the main page's blank space above feedback
+`GENERAL_CONTENT_HEIGHT = 444` controls the main page's blank space above feedback
 and credits: decrease it to lift that entire footer, or increase it to lower it.
 A change of about 12 pixels corresponds to one normal text line.
 
@@ -579,3 +579,9 @@ ret_Cinema implements its own minimal controls without zoom curves or a dependen
 - Preserve native logout countdown visibility during UI fades and restore original opacity and visibility on exit, shutdown, Effect disable, and profile changes.
 - Increase spacing after Global Preset and remove another blank line above the feedback link.
 - Update profile schema to 14 with imports from versions 1–13.
+
+## Changes in 1.1.17
+
+- Reduce main-page spacing above the feedback link by one line.
+- Keep GoOffline white in the Advanced Cinematographer Stay tree.
+- Allow Custom HideUI animation duration to be zero and use zero as the Default and ret_like reference. Zero disables fade-out and fade-in, while positive saved durations remain unchanged. Numeric input, sliders, reset buttons, CL settings, and profile imports support zero.
